@@ -56,7 +56,7 @@ DEWPOINT_LAPSE_RATE: pint.Quantity = 1.8 * units.kelvin / units.kilometer
 # This is to keep in line with MetPy conventions
 # Returns Tuple of { parcel_pressure, parcel_height, parcel_temperature, parcel_dewpoint }
 @check_units("[pressure]", "[length]", "[temperature]", "[temperature]", "[speed]", "[speed]")
-def ecape_parcel(
+def calc_ecape_parcel(
         pressure: PintList, 
         height: PintList, 
         temperature: PintList, 
