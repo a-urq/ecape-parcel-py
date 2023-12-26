@@ -6,7 +6,7 @@ This package has been written with the intention of using the same input data th
 
 ```python
 import sounderpy as spy
-from ecape_parcel import calc_ecape_parcel
+from ecape_parcel.calc import calc_ecape_parcel
 
 # This file uses real-world meteorological data as a test for the ECAPE parcel code. 
 # May be removed from repository later on if any circular dependency issues come up
