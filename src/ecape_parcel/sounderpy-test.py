@@ -1,5 +1,5 @@
 import sounderpy as spy
-from ecape_parcel import ecape_parcel
+from ecape_parcel import calc_ecape_parcel # WHY WON'T IT FUCKING IMPORT THE CALC ECAPE PARCEL FUNCTION 
 
 # This file uses real-world meteorological data as a test for the ECAPE parcel code. 
 # May be removed from repository later on if any circular dependency issues come up
@@ -21,6 +21,6 @@ z = clean_data['z']
 u = clean_data['u']
 v = clean_data['v'] 
 
-ecape_parcel(p, z, T, Td, u, v)
+calc_ecape_parcel(p, z, T, Td, u, v, True)
 
 spy.metpy_sounding(clean_data)
