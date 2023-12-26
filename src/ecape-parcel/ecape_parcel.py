@@ -110,13 +110,39 @@ def ecape_parcel(
         el = calc_el_height(pressure, height, temperature, dewpoint, parcel_func[cape_type])[1]
     elif cape != None and el == None:
         parcel_profile = mpcalc.parcel_profile(pressure, parcel_temperature, parcel_dewpoint)
-        el = calc_el_height(pressure, temperature, dewpoint, parcel_profile)
+        el = calc_el_height(pressure, height, temperature, dewpoint, parcel_func[cape_type])[1]
     elif cape == None and el != None:
         parcel_profile = mpcalc.parcel_profile(pressure, parcel_temperature, parcel_dewpoint)
         cape, _ = mpcalc.cape_cin(pressure, temperature, dewpoint, parcel_profile) * units("J/kg")
 
     # print("el: ", el)
     # print("parcel_height: ", parcel_height)
+        
+    # print(height)
+    # print(pressure)
+    # print(temperature)
+    # print(specific_humidity)
+    # print(u_wind)
+    # print(v_wind)
+    # print(cape_type)
+    # print(cape)
+        
+    if cape <= 0:
+        if align_to_input_pressure_values:
+            pressure_raw = [None] * len(pressure)
+            height_raw = [None] * len(pressure)
+            temperature_raw = [None] * len(pressure)
+            dewpoint_raw = [None] * len(pressure)
+
+            return (pressure_raw,  height_raw, temperature_raw, dewpoint_raw)
+        else:
+            pressure_raw = [None]
+            height_raw = [None]
+            temperature_raw = [None]
+            dewpoint_raw = [None]
+            
+            return (pressure_raw,  height_raw, temperature_raw, dewpoint_raw)
+
 
     ecape = calc_ecape(height, pressure, temperature, specific_humidity, u_wind, v_wind, cape_type, cape)
     vsr = calc_sr_wind(pressure, u_wind, v_wind, height, storm_motion_type, inflow_bottom, inflow_top)
@@ -162,14 +188,14 @@ def ecape_parcel(
             parcel_temperature -= DRY_ADIABATIC_LAPSE_RATE * ECAPE_PARCEL_DZ
             parcel_dewpoint -= DEWPOINT_LAPSE_RATE * ECAPE_PARCEL_DZ
 
-            # parcel_specific_humidity = mpcalc.specific_humidity_from_dewpoint(parcel_pressure, parcel_dewpoint)
-            # env_specific_humidity = linear_interp(height, specific_humidity, parcel_height)
+            #parcel_specific_humidity = mpcalc.specific_humidity_from_dewpoint(parcel_pressure, parcel_dewpoint)
+            #env_specific_humidity = linear_interp(height, specific_humidity, parcel_height)
 
-            # dq = -epsilon * (parcel_specific_humidity - env_specific_humidity) / units.meter
+            #dq = -epsilon * (parcel_specific_humidity - env_specific_humidity) / units.meter
 
-            # parcel_specific_humidity += dq * ECAPE_PARCEL_DZ
+            #parcel_specific_humidity += dq * ECAPE_PARCEL_DZ
             
-            # parcel_dewpoint = mpcalc.dewpoint_from_specific_humidity(parcel_pressure, parcel_temperature, parcel_specific_humidity).to("degK")
+            parcel_dewpoint = mpcalc.dewpoint_from_specific_humidity(parcel_pressure, parcel_temperature, parcel_specific_humidity).to("degK")
 
             parcel_moist_static_energy = mpcalc.moist_static_energy(parcel_height, parcel_temperature, parcel_specific_humidity)
         else:
