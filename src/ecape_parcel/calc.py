@@ -1,6 +1,6 @@
 #
 # AUTHOR: Amelia Urquhart (https://github.com/a-urq)
-# VERSION: 1.0.0
+# VERSION: 1.0.5.1
 # DATE: December 25, 2023
 #
 
