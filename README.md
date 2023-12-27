@@ -1,6 +1,8 @@
 # ecape-parcel-py
 A simple Python package that computes ECAPE values and parcel paths.
 
+!! This code has not yet been run through any verification datasets. I am currently working with the author of the paper to verify that this works properly. !!
+
 # Installation
 Installation through PyPI is recommended. Copy-paste the following line into your terminal.
 
