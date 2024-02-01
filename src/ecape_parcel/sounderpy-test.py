@@ -1,12 +1,12 @@
 import sounderpy as spy
-from ecape_parcel import calc_ecape_parcel # WHY WON'T IT FUCKING IMPORT THE CALC ECAPE PARCEL FUNCTION 
+from calc import calc_ecape_parcel
 
 # This file uses real-world meteorological data as a test for the ECAPE parcel code. 
 # May be removed from repository later on if any circular dependency issues come up
 year  = '2013' 
 month = '05'
 day   = '20'
-hour  = '17'
+hour  = '22'
 latlon = [35.18, -97.44]
 method = 'rap' 
 
@@ -21,6 +21,7 @@ z = clean_data['z']
 u = clean_data['u']
 v = clean_data['v'] 
 
+print("calc_ecape_parcel")
 calc_ecape_parcel(p, z, T, Td, u, v, True)
 
-spy.metpy_sounding(clean_data)
+#spy.metpy_sounding(clean_data)
