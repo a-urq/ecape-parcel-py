@@ -1,10 +1,10 @@
 # ecape-parcel-py
 A simple Python package that computes ECAPE values and parcel paths.
 
-!! This code has not yet been run through any verification datasets. I am currently working with the author of the paper to verify that this works properly. !!
+!! This code is currently going through a rework. True adiabatic non-entraining parcels work correctly, but pseudoadiabatic ascent and entrainment are still undergoing testing. !!
 
 # Installation
-Installation through PyPI is recommended. Copy-paste the following line into your terminal.
+Installation through PyPI is recommended. Be advised that the currently released version uses an incorrect formula, and work on this problem is ongoing. Copy-paste the following line into your terminal.
 
 `pip install ecape-parcel`
 
@@ -13,7 +13,7 @@ After that, include the following line in your Python script, and you should be 
 `from ecape_parcel.calc import calc_ecape_parcel`
 
 # How To Use
-This package has been written with the intention of using the same input data that MetPy can handle. This example script was used as a test during development, utilizing <a href="https://github.com/kylejgillett/sounderpy">Kyle Gillett's SounderPy</a> to get test data.
+This package has been written with the intention of using the same input data as MetPy. This example script was used as a test during development, utilizing <a href="https://github.com/kylejgillett/sounderpy">Kyle Gillett's SounderPy</a> to get test data.
 
 ```python
 import sounderpy as spy
