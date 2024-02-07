@@ -1,11 +1,8 @@
 #
 # AUTHOR: Amelia Urquhart (https://github.com/a-urq)
-# VERSION: 1.1
-# DATE: February 1, 2024
+# VERSION: 1.1-pre
+# DATE: February 7, 2024
 #
-
-# USE PETERS ET AL 2022 LAPSE RATES INSTEAD OF MSE THING
-# HAVE A SWITCH THAT CONTROLS ACCOUNTING FOR 
 
 import metpy as mpy
 import metpy.calc as mpcalc
@@ -85,8 +82,8 @@ def calc_ecape_parcel(
     specific_humidity = []
 
     for i in range(len(pressure)):
-        pressure_0 = pressure[0]
-        dewpoint_0 = dewpoint[0]
+        pressure_0 = pressure[i]
+        dewpoint_0 = dewpoint[i]
 
         q_0 = specific_humidity_from_dewpoint(pressure_0, dewpoint_0).magnitude
 
@@ -175,10 +172,10 @@ def calc_ecape_parcel(
         vsr = vsr.to("meter / second")
         storm_column_height = storm_column_height.to("meter")
 
-        print("cape: ", cape)
-        print("ecape: ", ecape)
-        print("vsr: ", vsr)
-        print("storm_column_height: ", storm_column_height)
+        print("amelia cape: ", cape)
+        print("amelia ecape: ", ecape)
+        print("amelia vsr: ", vsr)
+        print("amelia storm_column_height: ", storm_column_height)
 
         r = updraft_radius(cape.magnitude, ecape.magnitude, vsr.magnitude, storm_column_height.magnitude)
         epsilon = entrainment_rate(r)
@@ -211,13 +208,18 @@ def calc_ecape_parcel(
     parcel_moist_static_energy = mpcalc.moist_static_energy(parcel_height, parcel_temperature, parcel_qv)
 
     print("parcel z/q/q0:", parcel_height, parcel_qv, specific_humidity[0])
+    print("specific humidity: ", specific_humidity)
+    print("amelia entr rate:", entr_rate)
 
     prate = 1 / ECAPE_PARCEL_DZ
     if not pseudoadiabatic_switch:
         prate *= 0
 
+    dqt_dz = 0 / ECAPE_PARCEL_DZ
+
     while parcel_pressure >= pressure[-1]:
-        parcel_pressure = pressure_at_height(parcel_pressure, ECAPE_PARCEL_DZ, parcel_temperature)
+        env_temperature = linear_interp(height, temperature, parcel_height)
+        parcel_pressure = pressure_at_height(parcel_pressure, ECAPE_PARCEL_DZ, env_temperature)
         parcel_height += ECAPE_PARCEL_DZ
 
         if parcel_dewpoint < parcel_temperature:
@@ -226,25 +228,55 @@ def calc_ecape_parcel(
 
             dT_dz = unsaturated_adiabatic_lapse_rate(parcel_temperature, parcel_qv, env_temperature, env_qv, entr_rate)
             dqv_dz = -entr_rate * (parcel_qv - env_qv)
+            dqt_dz = -entr_rate * (parcel_qv - env_qv) - prate * (parcel_qt - parcel_qv)
+
 
             parcel_temperature += dT_dz * ECAPE_PARCEL_DZ
             parcel_qv += dqv_dz * ECAPE_PARCEL_DZ
+            parcel_qt += dqt_dz * ECAPE_PARCEL_DZ
+
+            # print("amelia qv:", parcel_qv)
 
             parcel_dewpoint = dewpoint_from_specific_humidity(parcel_pressure, parcel_qv)
         else:
             env_temperature = linear_interp(height, temperature, parcel_height)
             env_qv = linear_interp(height, specific_humidity, parcel_height)
 
-            dT_dz = saturated_adiabatic_lapse_rate(parcel_temperature, parcel_qt, parcel_pressure, env_temperature, env_qv, entr_rate, prate)
+            dT_dz = None
+            
+            if pseudoadiabatic_switch:
+                dT_dz = saturated_adiabatic_lapse_rate(parcel_temperature, parcel_qt, parcel_pressure, env_temperature, env_qv, entr_rate, prate, qt_entrainment=dqt_dz)
+            else:
+                dT_dz = saturated_adiabatic_lapse_rate(parcel_temperature, parcel_qt, parcel_pressure, env_temperature, env_qv, entr_rate, prate)
 
-            new_parcel_qv = (1 - parcel_qt) * r_sat(parcel_temperature, parcel_pressure, 1)
-            delta_qv = new_parcel_qv - parcel_qv
+            new_parcel_qv = specific_humidity_from_dewpoint(parcel_pressure, parcel_temperature)
 
-            dqt_dz = -entr_rate * (parcel_qv - env_qv) - prate * (parcel_qt - parcel_qv)
+            if parcel_pressure > 70000 * units('Pa'):
+                print("amelia dT/dz:", dT_dz, parcel_temperature, parcel_qv, parcel_qt, parcel_pressure, entr_rate, prate)
+                # print("amelia dqt_dz:", dqt_dz, parcel_pressure)
+                # print("amelia qv qt qv0:", parcel_qv, parcel_qt, env_qv)
+            # print("dqt_dz - 1:", -entr_rate * (parcel_qv - env_qv))
+            # print("dqt_dz - 2:", entr_rate)
+            # print("dqt_dz - 3:", (parcel_qv))
+            # print("dqt_dz - 4:", (env_qv))
+            # print("dqt_dz - 5:", (parcel_qv - env_qv))
+            # print("dqt_dz - 6:", - prate * (parcel_qt - parcel_qv))
+            # print("dqt_dz - 7:", -prate)
+            # print("dqt_dz - 8:", (parcel_qt - parcel_qv))
+                
+            dqt_dz = (new_parcel_qv - parcel_qv) / ECAPE_PARCEL_DZ
 
             parcel_temperature += dT_dz * ECAPE_PARCEL_DZ
-            parcel_qv += delta_qv # remember, delta_qv is negative
-            parcel_qt += dqt_dz * ECAPE_PARCEL_DZ
+            parcel_qv = new_parcel_qv
+
+            if pseudoadiabatic_switch:
+                parcel_qt = parcel_qv
+            else:
+                dqt_dz = -entr_rate * (parcel_qv - env_qv) - prate * (parcel_qt - parcel_qv)
+                parcel_qt += dqt_dz * ECAPE_PARCEL_DZ
+
+            # print("qv:", parcel_qv)
+            # print("qt & dqt:", parcel_qt, dqt_dz)
 
             if parcel_qt < parcel_qv:
                 parcel_qv = parcel_qt
@@ -254,6 +286,8 @@ def calc_ecape_parcel(
         temperature_raw.append(parcel_temperature)
         qv_raw.append(parcel_qv)
         qt_raw.append(parcel_qt)
+
+        # print(parcel_pressure, parcel_height, parcel_temperature, parcel_qv, parcel_qt)
 
     pressure_units = pressure_raw[-1].units
     height_units = height_raw[-1].units
@@ -322,6 +356,8 @@ def calc_ecape_parcel(
     temperature_qty : pint.Quantity = temperature_nondim * temperature_units
     qv_qty : pint.Quantity = qv_nondim * qv_units
     qt_qty : pint.Quantity = qt_nondim * qt_units
+
+    print(pressure_qty[0], height_qty[0], temperature_qty[0], qv_qty[0], qt_qty[0])
 
     return ( pressure_qty, height_qty, temperature_qty, qv_qty, qt_qty )
 
@@ -572,7 +608,7 @@ g = 9.81 * units("m")/units("s")/units("s")
 c_pd = 1005 * units("J/kg")/units("K")
 c_pv = 1870 * units("J/kg")/units("K")
 c_pl = 4190 * units("J/kg")/units("K")
-c_pi = 2016 * units("J/kg")/units("K")
+c_pi = 2106 * units("J/kg")/units("K")
 R_d = 287.04 * units("J/kg")/units("K")
 R_v = 461.5 * units("J/kg")/units("K")
 L_v_trip = 2501000 * units("J/kg")
@@ -614,7 +650,7 @@ def ice_fraction(temperature, warmest_mixed_phase_temp, coldest_mixed_phase_temp
     elif (temperature <= coldest_mixed_phase_temp):
         return 1
     else:
-        return (1/(coldest_mixed_phase_temp - warmest_mixed_phase_temp))*(temperature - coldest_mixed_phase_temp)
+        return (1/(coldest_mixed_phase_temp - warmest_mixed_phase_temp))*(temperature - warmest_mixed_phase_temp)
     
 @check_units('[temperature]', '[temperature]', '[temperature]')
 def ice_fraction_deriv(temperature, warmest_mixed_phase_temp, coldest_mixed_phase_temp):
@@ -654,30 +690,39 @@ def r_sat(temperature, pressure, ice_flag: int, warmest_mixed_phase_temp: pint.Q
 
 # Equation 24 in Peters et. al. 2022 (https://journals.ametsoc.org/view/journals/atsc/79/3/JAS-D-21-0118.1.xml)
 # @check_units('[temperature]', '[dimensionless]',  '[dimensionless]', '[temperature]', '[dimensionless]', '[dimensionless]')
-def saturated_adiabatic_lapse_rate(temperature_parcel: pint.Quantity, qt_parcel: pint.Quantity, pressure_parcel: pint.Quantity, temperature_env: pint.Quantity, qv_env: pint.Quantity, entrainment_rate: pint.Quantity, prate: pint.Quantity, warmest_mixed_phase_temp: pint.Quantity = 273.15 * units("K"), coldest_mixed_phase_temp: pint.Quantity = 253.15 * units("K")) -> pint.Quantity:
+def saturated_adiabatic_lapse_rate(temperature_parcel: pint.Quantity, qt_parcel: pint.Quantity, pressure_parcel: pint.Quantity, temperature_env: pint.Quantity, qv_env: pint.Quantity, entrainment_rate: pint.Quantity, prate: pint.Quantity, warmest_mixed_phase_temp: pint.Quantity = 273.15 * units("K"), coldest_mixed_phase_temp: pint.Quantity = 253.15 * units("K"), qt_entrainment: pint.Quantity = None) -> pint.Quantity:
     omega = ice_fraction(temperature_parcel, warmest_mixed_phase_temp, coldest_mixed_phase_temp)
     d_omega = ice_fraction_deriv(temperature_parcel, warmest_mixed_phase_temp, coldest_mixed_phase_temp)
-    d_omega = ice_fraction_deriv(temperature_parcel, warmest_mixed_phase_temp, coldest_mixed_phase_temp)
 
-    q_vsl = (1 - qt_parcel)*r_sat(temperature_parcel, pressure_parcel, False)
-    q_vsi = (1 - qt_parcel)*r_sat(temperature_parcel, pressure_parcel, True)
+    q_vsl = (1 - qt_parcel)*r_sat(temperature_parcel, pressure_parcel, 0)
+    q_vsi = (1 - qt_parcel)*r_sat(temperature_parcel, pressure_parcel, 2)
     
     qv_parcel = (1 - omega) * q_vsl + omega * q_vsi
 
     temperature_entrainment = -entrainment_rate * (temperature_parcel - temperature_env)
     qv_entrainment = -entrainment_rate * (qv_parcel - qv_env)
-    qt_entrainment = -entrainment_rate * (qt_parcel - qv_env) - prate * (qt_parcel - qv_parcel)
 
+    if qt_entrainment == None:
+        qt_entrainment = -entrainment_rate * (qt_parcel - qv_env) - prate * (qt_parcel - qv_parcel)
+
+    # print("dqv_dz:", qv_entrainment)
+
+    # print("amelia eps_T:", temperature_entrainment)
+    # print("amelia eps_qv:", qv_entrainment)
+    # print("amelia eps_qt:", qt_entrainment)
     q_condensate = qt_parcel - qv_parcel
     ql_parcel = q_condensate * (1 - omega)
     qi_parcel = q_condensate * omega
 
     c_pm = (1 - qt_parcel) * c_pd + qv_parcel * c_pv + ql_parcel * c_pl + qi_parcel * c_pi
     
-    density_temperature_parcel = density_temperature(temperature_parcel, qv_parcel, qv_parcel)
+    density_temperature_parcel = density_temperature(temperature_parcel, qv_parcel, qt_parcel)
     density_temperature_env = density_temperature(temperature_env, qv_env, qv_env)
 
     buoyancy = g * (density_temperature_parcel - density_temperature_env)/density_temperature_env
+
+    # print("density_temperature_parcel:", density_temperature_parcel)
+    # print("density_temperature_env:", density_temperature_env)
 
     L_v = L_v_trip + (temperature_parcel - T_trip)*(c_pv - c_pl)
     L_i = L_i_trip + (temperature_parcel - T_trip)*(c_pl - c_pi)
@@ -686,6 +731,10 @@ def saturated_adiabatic_lapse_rate(temperature_parcel: pint.Quantity, qt_parcel:
 
     Q_vsl = q_vsl/(phi - phi*qt_parcel + qv_parcel)
     Q_vsi = q_vsi/(phi - phi*qt_parcel + qv_parcel)
+    # print("q_vsl:", q_vsl)
+    # print("q_vsi:", q_vsi)
+    # print("Q_vsl:", Q_vsl)
+    # print("Q_vsi:", Q_vsi)
 
     Q_M = (1 - omega) * (q_vsl)/(1 - Q_vsl) + omega * (q_vsi)/(1 - Q_vsi)
     L_M = (1 - omega) * L_v * (q_vsl)/(1 - Q_vsl) + omega * (L_v + L_i) * (q_vsi)/(1 - Q_vsi)
@@ -694,12 +743,35 @@ def saturated_adiabatic_lapse_rate(temperature_parcel: pint.Quantity, qt_parcel:
     term_1 = buoyancy
     term_2 = g
     term_3 = ((L_s * Q_M) / (R_m0 * temperature_env)) * g
-    term_4 = (c_pm + L_i * (qt_parcel - qv_parcel) * d_omega) * temperature_entrainment
+    term_4 = (c_pm - L_i * (qt_parcel - qv_parcel) * d_omega) * temperature_entrainment
     term_5 = L_s * (qv_entrainment + qv_parcel/(1-qt_parcel) * qt_entrainment) # - (q_vsi - q_vsl) * d_omega) # peters left this end bit out
 
     term_6 = c_pm
-    term_7 = (L_i * (qt_parcel - qv_env) - L_s * (q_vsi - q_vsl)) * -d_omega
+    term_7 = (L_i * (qt_parcel - qv_parcel) - L_s * (q_vsi - q_vsl)) * d_omega
     term_8 = (L_s * L_M)/(R_v * temperature_parcel * temperature_parcel)
+
+    # print("amelia 4.1: ", (c_pm - L_i * (qt_parcel - qv_parcel) * d_omega) * temperature_entrainment)
+    # print("amelia 4.2: ", (c_pm - L_i * (qt_parcel - qv_parcel) * d_omega))
+    # print("amelia 4.3: ", (c_pm))
+    # print("amelia 4.4: ", (L_i * (qt_parcel - qv_parcel) * d_omega))
+    # print("amelia 4.5: ", (L_i))
+    # print("amelia 4.6: ", ((qt_parcel)))
+    # print("amelia 4.7: ", ((qv_parcel)))
+    # print("amelia 4.8: ", ((qt_parcel - qv_parcel)))
+    # print("amelia 4.9: ", (d_omega))
+
+    # print("term 1:", term_1)
+    # print("term 2:", term_2)
+    # print("term 3:", term_3)
+    # print("term 4:", term_4)
+    # print("term 5:", term_5)
+    # print("term 6:", term_6)
+    # print("term 7:", term_7)
+    # print("term 8:", term_8)
+    # print("numerator:", -(term_1 + term_2 + term_3 - term_4 - term_5))
+    # print("denominator:", (term_6 - term_7 + term_8))
+    # print("entrainment:", entrainment_rate)
+    # print("T entrainment:", temperature_entrainment)
 
     return -(term_1 + term_2 + term_3 - term_4 - term_5) / (term_6 - term_7 + term_8)
 
@@ -762,16 +834,47 @@ def saturated_adiabatic_lapse_rate(temperature_parcel: pint.Quantity, qt_parcel:
 # gamma_m = saturated_adiabatic_lapse_rate(T, qt_parcel, p, T0, qv0, entr, prate).to("K/km")
 # print(gamma_m)
 
-# T = 323.15 * units('K')
-# qt_parcel = 0.001 * units('dimensionless')
-# p = 87500 * units('Pa')
-# T0 = 313.15 * units('K')
-# qv0 = 0.010 * units('dimensionless')
-# entr = 0 / units('m')
-# prate = 0 / units('m')
+T = 263.15 * units('K')
+qt_parcel = 0.00448 * units('dimensionless')
+p = 40000 * units('Pa')
+T0 = 248.15 * units('K')
+qv0 = 0.0010 * units('dimensionless')
+entr = 0.00000 / units('m')
+prate = 0.05 / units('m')
+prate_2 = 0.004 / units('m')
+T1 = 273.15 * units('K')
+T2 = 253.15 * units('K')
 
-# gamma_m = saturated_adiabatic_lapse_rate(T, qt_parcel, p, T0, qv0, entr, prate).to("K/km")
-# print(gamma_m)
+# print("q-parcel-pseudo: ", specific_humidity_from_dewpoint(p, T))
+
+gamma_m = saturated_adiabatic_lapse_rate(T, qt_parcel, p, T0, qv0, entr, prate, T1, T2).to("K/km")
+print(gamma_m)
+
+from ECAPE_FUNCTIONS import moislif
+
+q_vsl = (1 - qt_parcel)*r_sat(T, p, 0)
+q_vsi = (1 - qt_parcel)*r_sat(T, p, 2)
+omega = ice_fraction(T, T1, T2)
+    
+qv_parcel = (1 - omega) * q_vsl + omega * q_vsi
+
+gamma_m = moislif(T.magnitude, qv_parcel.magnitude, q_vsl.magnitude, q_vsi.magnitude, p.magnitude, T0.magnitude, qv0.magnitude, qt_parcel.magnitude, entr.magnitude, prate.magnitude, T1.magnitude, T2.magnitude)
+print(gamma_m * 1000)
+
+prate_2 = 0.01 / units('m')
+
+gamma_m = moislif(T.magnitude, qv_parcel.magnitude, q_vsl.magnitude, q_vsi.magnitude, p.magnitude, T0.magnitude, qv0.magnitude, qt_parcel.magnitude, entr.magnitude, prate_2.magnitude, T1.magnitude, T2.magnitude)
+print(gamma_m * 1000)
+
+prate_2 = 0.004 / units('m')
+
+gamma_m = moislif(T.magnitude, qv_parcel.magnitude, q_vsl.magnitude, q_vsi.magnitude, p.magnitude, T0.magnitude, qv0.magnitude, qt_parcel.magnitude, entr.magnitude, prate_2.magnitude, T1.magnitude, T2.magnitude)
+print(gamma_m * 1000)
+
+prate_2 = 0.002 / units('m')
+
+gamma_m = moislif(T.magnitude, qv_parcel.magnitude, q_vsl.magnitude, q_vsi.magnitude, p.magnitude, T0.magnitude, qv0.magnitude, qt_parcel.magnitude, entr.magnitude, prate_2.magnitude, T1.magnitude, T2.magnitude)
+print(gamma_m * 1000)
 
 # gamma_d = unsaturated_adiabatic_lapse_rate(T, qv0, T0, qv0, entr).to("K/km")
 # print(gamma_d)
