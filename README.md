@@ -13,7 +13,7 @@ After that, include the following line in your Python script, and you should be 
 `from ecape_parcel.calc import calc_ecape_parcel`
 
 # How To Use
-This package has been written with the intention of using the same input data format as MetPy. This example script was used as a test during development, utilizing <a href="https://github.com/kylejgillett/sounderpy">Kyle Gillett's SounderPy</a> to get test data.
+This package has been written with the intention of using the same input data format as MetPy. This example script was used as a test during development, utilizing <a href="https://github.com/kylejgillett/sounderpy">Kyle Gillett's SounderPy</a> to get test data. This script uses the current pre-release version of ecape-parcel-py, not the release version on PyPI.
 
 ```python
 import sounderpy as spy
@@ -39,7 +39,7 @@ z = clean_data['z']
 u = clean_data['u']
 v = clean_data['v'] 
 
-parcel_p, parcel_z, parcel_T, parcel_Td = calc_ecape_parcel(p, z, T, Td, u, v, True)
+parcel_p, parcel_z, parcel_T, parcel_qv, parcel_qt = calc_ecape_parcel(p, z, T, Td, u, v, True)
 ```
 
 The last parameter controls the vertical resolution of the returned parcel path. If set to `False`, the parcel path will have a constant vertical resolution of 20 meters, which is the `dz` value used by the parcel path solver internally. If set to `True`, the parcel path will only contain values from the exact same pressure levels as the pressure array used as an input.
