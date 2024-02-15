@@ -1,8 +1,11 @@
 #
 # AUTHOR: Amelia Urquhart (https://github.com/a-urq)
-# VERSION: 1.1-pre
-# DATE: February 7, 2024
+# VERSION: 1.1
+# DATE: January 27, 2024
 #
+
+# USE PETERS ET AL 2022 LAPSE RATES INSTEAD OF MSE THING
+# HAVE A SWITCH THAT CONTROLS ACCOUNTING FOR 
 
 import metpy as mpy
 import metpy.calc as mpcalc
@@ -89,9 +92,11 @@ def calc_ecape_parcel(
 
         specific_humidity.append(q_0)
 
+        # print("amelia q0: ", pressure_0, q_0)
+
     specific_humidity *= units('dimensionless')
 
-    print(specific_humidity)
+    # print(specific_humidity)
 
     # moist_static_energy = mpcalc.moist_static_energy(height, temperature, specific_humidity).to("J/kg")
 
@@ -179,6 +184,12 @@ def calc_ecape_parcel(
 
         r = updraft_radius(cape.magnitude, ecape.magnitude, vsr.magnitude, storm_column_height.magnitude)
         epsilon = entrainment_rate(r)
+
+        print("ur inputs:", cape.magnitude, ecape.magnitude, vsr.magnitude, storm_column_height.magnitude)
+
+        print("going into peters profile")
+        print("ur:", r)
+        print("eps:", epsilon)
         
         entr_rate = epsilon / units.meter
     else:
@@ -219,26 +230,38 @@ def calc_ecape_parcel(
 
     while parcel_pressure >= pressure[-1]:
         env_temperature = linear_interp(height, temperature, parcel_height)
-        parcel_pressure = pressure_at_height(parcel_pressure, ECAPE_PARCEL_DZ, env_temperature)
-        parcel_height += ECAPE_PARCEL_DZ
+        # parcel_pressure = pressure_at_height(parcel_pressure, ECAPE_PARCEL_DZ, env_temperature)
+        # parcel_height += ECAPE_PARCEL_DZ
 
-        if parcel_dewpoint < parcel_temperature:
+        parcel_saturation_qv = (1-parcel_qt)*r_sat(parcel_temperature,parcel_pressure,1)
+
+        if parcel_saturation_qv > parcel_qv:
+            parcel_pressure = pressure_at_height(parcel_pressure, ECAPE_PARCEL_DZ, env_temperature)
+            parcel_height += ECAPE_PARCEL_DZ
+
             env_temperature = linear_interp(height, temperature, parcel_height)
             env_qv = linear_interp(height, specific_humidity, parcel_height)
 
             dT_dz = unsaturated_adiabatic_lapse_rate(parcel_temperature, parcel_qv, env_temperature, env_qv, entr_rate)
             dqv_dz = -entr_rate * (parcel_qv - env_qv)
-            dqt_dz = -entr_rate * (parcel_qv - env_qv) - prate * (parcel_qt - parcel_qv)
 
+            q_sat = specific_humidity_from_dewpoint(parcel_pressure, parcel_temperature)
+            
+            # print("amelia dT/dz:", dT_dz.m, parcel_temperature.m, parcel_qv.m, env_temperature.m, env_qv.m, parcel_pressure.m, entr_rate.m, "dqv_dz", dqv_dz.m, (-entr_rate * (parcel_qv - env_qv)).m, parcel_qv.m, env_qv.m)
+            # print("amelia dT/dz:", dT_dz.m, parcel_temperature.m, parcel_qv.m, env_temperature.m, env_qv.m, parcel_pressure.m, parcel_height.m, entr_rate.m, "q_sat", q_sat)
 
             parcel_temperature += dT_dz * ECAPE_PARCEL_DZ
             parcel_qv += dqv_dz * ECAPE_PARCEL_DZ
-            parcel_qt += dqt_dz * ECAPE_PARCEL_DZ
+            # parcel_qt += dqt_dz * ECAPE_PARCEL_DZ
+            parcel_qt = parcel_qv
 
             # print("amelia qv:", parcel_qv)
 
             parcel_dewpoint = dewpoint_from_specific_humidity(parcel_pressure, parcel_qv)
         else:
+            parcel_pressure = pressure_at_height(parcel_pressure, ECAPE_PARCEL_DZ, env_temperature)
+            parcel_height += ECAPE_PARCEL_DZ
+
             env_temperature = linear_interp(height, temperature, parcel_height)
             env_qv = linear_interp(height, specific_humidity, parcel_height)
 
@@ -249,10 +272,19 @@ def calc_ecape_parcel(
             else:
                 dT_dz = saturated_adiabatic_lapse_rate(parcel_temperature, parcel_qt, parcel_pressure, env_temperature, env_qv, entr_rate, prate)
 
-            new_parcel_qv = specific_humidity_from_dewpoint(parcel_pressure, parcel_temperature)
+            new_parcel_qv = (1-parcel_qt)*r_sat(parcel_temperature, parcel_pressure, 1).to('kg/kg')
 
-            if parcel_pressure > 70000 * units('Pa'):
-                print("amelia dT/dz:", dT_dz, parcel_temperature, parcel_qv, parcel_qt, parcel_pressure, entr_rate, prate)
+            if pseudoadiabatic_switch:
+                dqt_dz = (new_parcel_qv - parcel_qv) / ECAPE_PARCEL_DZ
+            else:
+                dqt_dz = -entr_rate * (parcel_qt - env_qv) - prate * (parcel_qt - parcel_qv)
+
+            if parcel_pressure < 40000 * units('Pa') and parcel_pressure > 20000 * units('Pa'):
+                pass
+                # print("amelia dT/dz:", dT_dz.m, parcel_temperature.m, parcel_qv.m, parcel_qt.m, parcel_pressure.m, entr_rate.m, prate.m, "dqt_dz", dqt_dz.m, (-entr_rate * (parcel_qt - env_qv)).m, parcel_qt.m, env_qv.m)
+                # print("amelia new_parcel_qv:", new_parcel_qv, parcel_qt, )
+                # print("amelia dT/dz:", dT_dz.m, parcel_temperature.m, parcel_qv.m, parcel_qt.m, parcel_pressure.m, entr_rate.m, prate.m, "dqt_dz", dqt_dz.m, -entr_rate * (parcel_qt - env_qv), parcel_qt, env_qv)
+                # print("amelia dT/dz:", dT_dz.m, parcel_qt.m, parcel_pressure.m, "dqt_dz", dqt_dz.m, (-entr_rate * (parcel_qt - env_qv)).m,  (-prate * (parcel_qt - parcel_qv)).m, parcel_qt.m, env_qv.m, prate.m)
                 # print("amelia dqt_dz:", dqt_dz, parcel_pressure)
                 # print("amelia qv qt qv0:", parcel_qv, parcel_qt, env_qv)
             # print("dqt_dz - 1:", -entr_rate * (parcel_qv - env_qv))
@@ -263,8 +295,6 @@ def calc_ecape_parcel(
             # print("dqt_dz - 6:", - prate * (parcel_qt - parcel_qv))
             # print("dqt_dz - 7:", -prate)
             # print("dqt_dz - 8:", (parcel_qt - parcel_qv))
-                
-            dqt_dz = (new_parcel_qv - parcel_qv) / ECAPE_PARCEL_DZ
 
             parcel_temperature += dT_dz * ECAPE_PARCEL_DZ
             parcel_qv = new_parcel_qv
@@ -272,7 +302,7 @@ def calc_ecape_parcel(
             if pseudoadiabatic_switch:
                 parcel_qt = parcel_qv
             else:
-                dqt_dz = -entr_rate * (parcel_qv - env_qv) - prate * (parcel_qt - parcel_qv)
+                dqt_dz = -entr_rate * (parcel_qt - env_qv) - prate * (parcel_qt - parcel_qv)
                 parcel_qt += dqt_dz * ECAPE_PARCEL_DZ
 
             # print("qv:", parcel_qv)
@@ -288,6 +318,9 @@ def calc_ecape_parcel(
         qt_raw.append(parcel_qt)
 
         # print(parcel_pressure, parcel_height, parcel_temperature, parcel_qv, parcel_qt)
+
+    # for i in range(len(qv_raw)):
+    #     print("amelia q profile:", pressure_raw[i], qv_raw[i], qt_raw[i])
 
     pressure_units = pressure_raw[-1].units
     height_units = height_raw[-1].units
@@ -532,7 +565,6 @@ def temperature_from_mse(mse: pint.Quantity, pressure: pint.Quantity, height: pi
 
 def specific_humidity_from_dewpoint(pressure, dewpoint):
 	vapor_pressure_ = vapor_pressure(dewpoint)
-	# print(vapor_pressure_)
 
 	return specific_humidity(pressure, vapor_pressure_) * units('dimensionless')
 
@@ -635,6 +667,10 @@ def unsaturated_adiabatic_lapse_rate(temperature_parcel: pint.Quantity, qv_parce
 
     c_pmv = (1 - qv_parcel) * c_pd + qv_parcel * c_pv
 
+    # print("amelia cpmv:", c_pmv)
+    # print("amelia B:", buoyancy)
+    # print("amelia eps:", temperature_entrainment)
+
     term_1 = -g/c_pd
     term_2 = 1 + (buoyancy/g)
     term_3 = c_pmv/c_pd
@@ -666,7 +702,7 @@ vapor_pres_ref = 611.2 * units("Pa")
 def r_sat(temperature, pressure, ice_flag: int, warmest_mixed_phase_temp: pint.Quantity = 273.15 * units("K"), coldest_mixed_phase_temp: pint.Quantity = 253.15 * units("K")):
         if ice_flag == 2:
             term_1=(c_pv - c_pi)/R_v
-            term_2=(L_v_trip - T_trip * (c_pv - c_pl))/R_v
+            term_2=(L_v_trip - T_trip * (c_pv - c_pi))/R_v
             esi=np.exp((temperature - T_trip)*term_2/(temperature*T_trip))*vapor_pres_ref*(temperature/T_trip)**(term_1)
             q_sat=phi * esi/(pressure - esi)
 
@@ -834,13 +870,13 @@ def saturated_adiabatic_lapse_rate(temperature_parcel: pint.Quantity, qt_parcel:
 # gamma_m = saturated_adiabatic_lapse_rate(T, qt_parcel, p, T0, qv0, entr, prate).to("K/km")
 # print(gamma_m)
 
-T = 263.15 * units('K')
-qt_parcel = 0.00448 * units('dimensionless')
-p = 40000 * units('Pa')
-T0 = 248.15 * units('K')
-qv0 = 0.0010 * units('dimensionless')
-entr = 0.00000 / units('m')
-prate = 0.05 / units('m')
+T = 252.6539 * units('K')
+qt_parcel = 0.011993985 * units('dimensionless')
+p = 34553 * units('Pa')
+T0 = 243.15 * units('K')
+qv0 = 0.000208959 * units('dimensionless')
+entr = 5.02522e-05 / units('m')
+prate = 0.00 / units('m')
 prate_2 = 0.004 / units('m')
 T1 = 273.15 * units('K')
 T2 = 253.15 * units('K')
@@ -850,7 +886,7 @@ T2 = 253.15 * units('K')
 gamma_m = saturated_adiabatic_lapse_rate(T, qt_parcel, p, T0, qv0, entr, prate, T1, T2).to("K/km")
 print(gamma_m)
 
-from ECAPE_FUNCTIONS import moislif
+from ECAPE_FUNCTIONS import moislif, drylift
 
 q_vsl = (1 - qt_parcel)*r_sat(T, p, 0)
 q_vsi = (1 - qt_parcel)*r_sat(T, p, 2)
@@ -861,22 +897,72 @@ qv_parcel = (1 - omega) * q_vsl + omega * q_vsi
 gamma_m = moislif(T.magnitude, qv_parcel.magnitude, q_vsl.magnitude, q_vsi.magnitude, p.magnitude, T0.magnitude, qv0.magnitude, qt_parcel.magnitude, entr.magnitude, prate.magnitude, T1.magnitude, T2.magnitude)
 print(gamma_m * 1000)
 
-prate_2 = 0.01 / units('m')
+# test_pressure = 85000 * units('Pa')
+# for i in range(0, 100, 1):
+#     test_dewpoint = (i + 223.15) * units('K')
+    
+#     amelia_q0 = specific_humidity_from_dewpoint(test_pressure, test_dewpoint)
+#     metpy_q0 = mpcalc.specific_humidity_from_dewpoint(test_pressure, test_dewpoint)
 
-gamma_m = moislif(T.magnitude, qv_parcel.magnitude, q_vsl.magnitude, q_vsi.magnitude, p.magnitude, T0.magnitude, qv0.magnitude, qt_parcel.magnitude, entr.magnitude, prate_2.magnitude, T1.magnitude, T2.magnitude)
-print(gamma_m * 1000)
+#     print(test_pressure, test_dewpoint, amelia_q0, metpy_q0, amelia_q0 - metpy_q0, amelia_q0 / metpy_q0)
 
-prate_2 = 0.004 / units('m')
+# test_pressure = 25000 * units('Pa')
+# for i in range(0, 100, 1):
+#     test_dewpoint = (i + 223.15) * units('K')
+    
+#     amelia_q0 = specific_humidity_from_dewpoint(test_pressure, test_dewpoint)
+#     metpy_q0 = mpcalc.specific_humidity_from_dewpoint(test_pressure, test_dewpoint)
 
-gamma_m = moislif(T.magnitude, qv_parcel.magnitude, q_vsl.magnitude, q_vsi.magnitude, p.magnitude, T0.magnitude, qv0.magnitude, qt_parcel.magnitude, entr.magnitude, prate_2.magnitude, T1.magnitude, T2.magnitude)
-print(gamma_m * 1000)
+#     print(test_pressure, test_dewpoint, amelia_q0, metpy_q0, amelia_q0 - metpy_q0, amelia_q0 / metpy_q0)
 
-prate_2 = 0.002 / units('m')
+# prate_2 = 0.01 / units('m')
 
-gamma_m = moislif(T.magnitude, qv_parcel.magnitude, q_vsl.magnitude, q_vsi.magnitude, p.magnitude, T0.magnitude, qv0.magnitude, qt_parcel.magnitude, entr.magnitude, prate_2.magnitude, T1.magnitude, T2.magnitude)
-print(gamma_m * 1000)
+# gamma_m = moislif(T.magnitude, qv_parcel.magnitude, q_vsl.magnitude, q_vsi.magnitude, p.magnitude, T0.magnitude, qv0.magnitude, qt_parcel.magnitude, entr.magnitude, prate_2.magnitude, T1.magnitude, T2.magnitude)
+# print(gamma_m * 1000)
+
+# prate_2 = 0.004 / units('m')
+
+# gamma_m = moislif(T.magnitude, qv_parcel.magnitude, q_vsl.magnitude, q_vsi.magnitude, p.magnitude, T0.magnitude, qv0.magnitude, qt_parcel.magnitude, entr.magnitude, prate_2.magnitude, T1.magnitude, T2.magnitude)
+# print(gamma_m * 1000)
+
+# prate_2 = 0.002 / units('m')
+
+# gamma_m = moislif(T.magnitude, qv_parcel.magnitude, q_vsl.magnitude, q_vsi.magnitude, p.magnitude, T0.magnitude, qv0.magnitude, qt_parcel.magnitude, entr.magnitude, prate_2.magnitude, T1.magnitude, T2.magnitude)
+# print(gamma_m * 1000)
 
 # gamma_d = unsaturated_adiabatic_lapse_rate(T, qv0, T0, qv0, entr).to("K/km")
 # print(gamma_d)
 
 # print("d_omega:", ice_fraction_deriv(263.15 * units('K'), 273.15 * units('K'), 253.15 * units('K')))
+    
+#gamma_d
+    
+# T = 298.08788821800584 * units('K')
+# q = 0.0163356632155656 * units('dimensionless') 
+# T0 = 298.904907537339 * units('K') 
+# q0 = 0.015581996527348846 * units('dimensionless') 
+# p = 949.047328986073 * units('hPa') 
+# entr_rate = 5.0252220440967176e-05 / units('m')
+# # entr_rate = 0 / units('m')
+
+# gamma_d = unsaturated_adiabatic_lapse_rate(T, q,T0, q0, entr_rate).to('K/km')
+
+# print("amelia gamma_d: ", gamma_d)
+
+# gamma_d = drylift(T.m, q.m, T0.m, q0.m, entr_rate.m)
+
+# print("peters gamma_d: ", gamma_d * 1000)
+
+
+# T = 298.08788821800584 * units('K')
+# p = 949.047328986073 * units('hPa') 
+
+# q_sat = specific_humidity_from_dewpoint(p, T)
+
+# print("vapor_pressure:", vapor_pressure(T))
+# print("q_sat:", q_sat)
+
+# q_sat = mpcalc.specific_humidity_from_dewpoint(p, T)
+
+# print("vapor_pressure:", mpcalc.saturation_vapor_pressure(T))
+# print("q_sat:", q_sat)
