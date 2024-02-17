@@ -14,7 +14,7 @@ import math
 import numpy as np
 import sys
 
-from ecape.calc import calc_ecape, calc_el_height
+from ecape.calc import calc_ecape, calc_el_height, calc_psi
 from metpy.units import check_units, units
 from pint import UnitRegistry
 
@@ -88,7 +88,7 @@ def calc_ecape_parcel(
         pressure_0 = pressure[i]
         dewpoint_0 = dewpoint[i]
 
-        q_0 = specific_humidity_from_dewpoint(pressure_0, dewpoint_0).magnitude
+        q_0 = mpcalc.specific_humidity_from_dewpoint(pressure_0, dewpoint_0).magnitude
 
         specific_humidity.append(q_0)
 
@@ -177,7 +177,12 @@ def calc_ecape_parcel(
         vsr = vsr.to("meter / second")
         storm_column_height = storm_column_height.to("meter")
 
+        # print("amelia ecape env profile")
+        # for i in range(len(height)):
+        #     print(height[i], pressure[i], temperature[i].to('degK'), specific_humidity[i], u_wind[i], v_wind[i])
+
         print("amelia cape: ", cape)
+        print("amelia psi: ", calc_psi(storm_column_height))
         print("amelia ecape: ", ecape)
         print("amelia vsr: ", vsr)
         print("amelia storm_column_height: ", storm_column_height)
@@ -196,7 +201,7 @@ def calc_ecape_parcel(
         entr_rate = 0 / units.meter
 
     #print("updr: ", r, " m")
-    print("entr: ", entr_rate)
+    # print("entr: ", entr_rate)
 
     parcel_temperature = parcel_temperature.to("degK")
     parcel_dewpoint = parcel_dewpoint.to("degK")
@@ -218,9 +223,9 @@ def calc_ecape_parcel(
 
     parcel_moist_static_energy = mpcalc.moist_static_energy(parcel_height, parcel_temperature, parcel_qv)
 
-    print("parcel z/q/q0:", parcel_height, parcel_qv, specific_humidity[0])
-    print("specific humidity: ", specific_humidity)
-    print("amelia entr rate:", entr_rate)
+    # print("parcel z/q/q0:", parcel_height, parcel_qv, specific_humidity[0])
+    # print("specific humidity: ", specific_humidity)
+    # print("amelia entr rate:", entr_rate)
 
     prate = 1 / ECAPE_PARCEL_DZ
     if not pseudoadiabatic_switch:
@@ -390,7 +395,7 @@ def calc_ecape_parcel(
     qv_qty : pint.Quantity = qv_nondim * qv_units
     qt_qty : pint.Quantity = qt_nondim * qt_units
 
-    print(pressure_qty[0], height_qty[0], temperature_qty[0], qv_qty[0], qt_qty[0])
+    # print(pressure_qty[0], height_qty[0], temperature_qty[0], qv_qty[0], qt_qty[0])
 
     return ( pressure_qty, height_qty, temperature_qty, qv_qty, qt_qty )
 
