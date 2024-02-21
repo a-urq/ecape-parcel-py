@@ -85,7 +85,7 @@ def calc_lfc_height(
     # calculate the parcel's temperature profile
     parcel_profile = _get_parcel_profile(pressure, temperature, dew_point_temperature, parcel_func)
 
-    print("profile:", parcel_func)
+    # print("profile:", parcel_func)
     # for i in range(len(temperature)):
     #     print(i, temperature[i], parcel_profile[i].to('degC'))
 
@@ -144,7 +144,7 @@ def calc_el_height(
 
 
 @check_units("[pressure]", "[speed]", "[speed]", "[length]")
-def calc_sr_wind(pressure: PintList, u_wind: PintList, v_wind: PintList, height_msl: PintList, infl_bottom: pint.Quantity = 0 * units("m"), infl_top: pint.Quantity = 1000 * units("m"), storm_motion_type: str = "right_moving") -> pint.Quantity:
+def calc_sr_wind(pressure: PintList, u_wind: PintList, v_wind: PintList, height_msl: PintList, infl_bottom: pint.Quantity = 0 * units("m"), infl_top: pint.Quantity = 1000 * units("m"), storm_motion_type: str = "right_moving", sm_u: pint.Quantity = None, sm_v: pint.Quantity = None) -> pint.Quantity:
     """
     Calculate the mean storm relative (as compared to Bunkers right motion) wind magnitude in the 0-1 km AGL layer
 
@@ -177,6 +177,9 @@ def calc_sr_wind(pressure: PintList, u_wind: PintList, v_wind: PintList, height_
     elif "mean_wind" == storm_motion_type:
         u_sr = u_wind - mean_wind[0]  # u-component
         v_sr = v_wind - mean_wind[1]  # v-component
+    elif "user_defined" == storm_motion_type and sm_u != None and sm_v != None:
+        u_sr = u_wind - sm_u  # u-component
+        v_sr = v_wind - sm_v  # v-component
     else:
         u_sr = u_wind - bunkers_right[0]  # u-component
         v_sr = v_wind - bunkers_right[1]  # v-component
@@ -355,6 +358,8 @@ def calc_ecape(
     storm_motion: str = "right_moving",
     lfc: pint.Quantity = None, 
     el: pint.Quantity = None, 
+    u_sm: pint.Quantity = None, 
+    v_sm: pint.Quantity = None, 
 ) -> pint.Quantity:
     """
     Calculate the entraining CAPE (ECAPE) of a parcel
@@ -430,7 +435,7 @@ def calc_ecape(
     ncape = calc_ncape(integral_arg, height_msl, lfc_idx, el_idx)
 
     # calculate the storm relative (sr) wind
-    sr_wind = calc_sr_wind(pressure, u_wind, v_wind, height_msl, infl_bottom=inflow_bottom, infl_top=inflow_top, storm_motion_type=storm_motion)
+    sr_wind = calc_sr_wind(pressure, u_wind, v_wind, height_msl, infl_bottom=inflow_bottom, infl_top=inflow_top, storm_motion_type=storm_motion, sm_u=u_sm, sm_v=v_sm)
 
     # calculate the entraining cape (ecape)
     psi = calc_psi(el_z)

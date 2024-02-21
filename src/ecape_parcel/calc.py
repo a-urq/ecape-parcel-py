@@ -1,6 +1,6 @@
 #
 # AUTHOR: Amelia Urquhart (https://github.com/a-urq)
-# VERSION: 1.1.0
+# VERSION: 1.1.1
 # DATE: February 21, 2024
 #
 
@@ -11,7 +11,7 @@ import math
 import numpy as np
 import sys
 
-from _ecape_calc import calc_ecape
+from ecape_parcel.ecape_calc import calc_ecape, calc_sr_wind
 from metpy.units import check_units, units
 from pint import UnitRegistry
 
@@ -72,13 +72,15 @@ def calc_ecape_parcel(
         inflow_layer_top: pint.Quantity = 1 * units.kilometer, 
         cape: pint.Quantity = None,
         lfc: pint.Quantity = None,
-        el: pint.Quantity = None) -> Tuple[pint.Quantity, pint.Quantity, pint.Quantity, pint.Quantity, pint.Quantity]:
+        el: pint.Quantity = None,
+        storm_motion_u: pint.Quantity = None,
+        storm_motion_v: pint.Quantity = None) -> Tuple[pint.Quantity, pint.Quantity, pint.Quantity, pint.Quantity, pint.Quantity]:
     
     if cape_type not in ['most_unstable', 'mixed_layer', 'surface_based']:
         sys.exit("Invalid 'cape_type' kwarg. Valid cape_types include ['most_unstable', 'mixed_layer', 'surface_based']")
     
-    if storm_motion_type not in ['right_moving', 'left_moving', 'mean_wind']:
-        sys.exit("Invalid 'storm_motion_type' kwarg. Valid storm_motion_types include ['right_moving', 'left_moving', 'mean_wind']")
+    if storm_motion_type not in ['right_moving', 'left_moving', 'mean_wind', 'user_defined']:
+        sys.exit("Invalid 'storm_motion_type' kwarg. Valid storm_motion_types include ['right_moving', 'left_moving', 'mean_wind', 'user_defined']")
 
     specific_humidity = []
 
@@ -182,8 +184,8 @@ def calc_ecape_parcel(
         # print("amelia calc ecape")
         # print("lfc:", lfc)
         # print("el:", el)
-        ecape = calc_ecape(height, pressure, temperature, specific_humidity, u_wind, v_wind, cape_type, cape, inflow_bottom=inflow_layer_bottom, inflow_top=inflow_layer_top, storm_motion=storm_motion_type, lfc=lfc, el=el)
-        vsr = calc_sr_wind(pressure, u_wind, v_wind, height, storm_motion_type, inflow_layer_bottom, inflow_layer_top)
+        ecape = calc_ecape(height, pressure, temperature, specific_humidity, u_wind, v_wind, cape_type, cape, inflow_bottom=inflow_layer_bottom, inflow_top=inflow_layer_top, storm_motion=storm_motion_type, lfc=lfc, el=el, u_sm=storm_motion_u, v_sm=storm_motion_v)
+        vsr = calc_sr_wind(pressure, u_wind, v_wind, height, inflow_layer_bottom, inflow_layer_top, storm_motion_type, sm_u=storm_motion_u, sm_v=storm_motion_v)
         storm_column_height = el - parcel_height
 
         cape = cape.to("joule / kilogram")
@@ -418,49 +420,6 @@ def calc_ecape_parcel(
 
     return ( pressure_qty, height_qty, temperature_qty, qv_qty, qt_qty )
 
-# borrowed from github.com/citylikeamradio/ecape and adjusted
-@check_units("[pressure]", "[speed]", "[speed]", "[length]")
-def calc_sr_wind(pressure: PintList, u_wind: PintList, v_wind: PintList, height_msl: PintList, storm_motion_type: str = "right_moving", inflow_bottom: pint.Quantity = 0 * units("m"), inflow_top: pint.Quantity = 1000 * units("m")) -> pint.Quantity:
-    """
-    Calculate the mean storm relative (as compared to Bunkers right motion) wind magnitude in the 0-1 km AGL layer
-
-    Args:
-        pressure:
-            Total atmospheric pressure
-        u_wind:
-            X component of the wind
-        v_wind
-            Y component of the wind
-        height_msl:
-            Atmospheric heights at the levels given by 'pressure'.
-
-    Returns:
-        sr_wind:
-            0-1 km AGL average storm relative wind magnitude
-
-    """
-    height_agl = height_msl - height_msl[0]
-    bunkers_right, bunkers_left, bunkers_mean = mpcalc.bunkers_storm_motion(pressure, u_wind, v_wind, height_agl)  # right, left, mean
-
-    storm_motion = None
-
-    if("right_moving" == storm_motion_type):
-        storm_motion = bunkers_right
-    elif("left_moving" == storm_motion_type):
-        storm_motion = bunkers_left
-    elif("mean_wind" == storm_motion_type):
-        storm_motion = bunkers_mean
-
-    u_sr = u_wind - storm_motion[0]  # u-component
-    v_sr = v_wind - storm_motion[1]  # v-component
-
-    u_sr_ = u_sr[np.nonzero((height_agl >= inflow_bottom.magnitude * units("m")) & (height_agl <= inflow_top.magnitude * units("m")))]
-    v_sr_ = v_sr[np.nonzero((height_agl >= inflow_bottom.magnitude * units("m")) & (height_agl <= inflow_top.magnitude * units("m")))]
-
-    sr_wind = np.mean(mpcalc.wind_speed(u_sr_, v_sr_))
-
-    return sr_wind
-
 molar_gas_constant = 8.314 * units.joule / units.kelvin / units.mole
 avg_molar_mass = 0.029 * units.kilogram / units.mole
 g = 9.81 * units.meter / units.second / units.second
@@ -635,6 +594,9 @@ def specific_humidity(pressure: pint.Quantity, vapor_pressure: pint.Quantity) ->
     water_vapor_density = absolute_humidity(vapor_pressure_nondim, 280); # kg m^-3
     air_density = dry_air_density(pressure_nondim - vapor_pressure_nondim, 280); # kg m^-3
 
+    # print("d_wv:", water_vapor_density)
+    # print("d_da:", air_density)
+
     return water_vapor_density / (water_vapor_density + air_density)
 
 dry_air_gas_constant = 287
@@ -674,6 +636,12 @@ def dewpoint_from_vapor_pressure(vapor_pressure):
     latent_heat_of_vaporization = 2.5e6  # J/kg
 
     vapor_pres_nondim = vapor_pressure
+
+    # print(1 / t0)
+    # print((461.5 / latent_heat_of_vaporization))
+    # print(vapor_pressure)
+    # print(e0)
+    # print(math.log(vapor_pres_nondim / e0))
 
     dewpoint_reciprocal = 1 / t0 - (461.5 / latent_heat_of_vaporization) * math.log(vapor_pres_nondim / e0)
 
@@ -715,6 +683,10 @@ def unsaturated_adiabatic_lapse_rate(temperature_parcel: pint.Quantity, qv_parce
     buoyancy = g * (density_temperature_parcel - density_temperature_env)/density_temperature_env
 
     c_pmv = (1 - qv_parcel) * c_pd + qv_parcel * c_pv
+
+    # print("amelia cpmv:", c_pmv)
+    # print("amelia B:", buoyancy)
+    # print("amelia eps:", temperature_entrainment)
 
     term_1 = -g/c_pd
     term_2 = 1 + (buoyancy/g)
