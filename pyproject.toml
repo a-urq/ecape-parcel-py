@@ -24,7 +24,7 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: CPython",
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
-dependencies = []
+dependencies = ["ecape"]
 
 [project.urls]
 Documentation = "https://github.com/a-urq/ecape-parcel-py#readme"

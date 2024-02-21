@@ -1,11 +1,10 @@
 #
 # AUTHOR: Amelia Urquhart (https://github.com/a-urq)
-# VERSION: 1.1
-# DATE: January 27, 2024
+# VERSION: 1.1-pre
+# DATE: February 18, 2024
 #
 
-# USE PETERS ET AL 2022 LAPSE RATES INSTEAD OF MSE THING
-# HAVE A SWITCH THAT CONTROLS ACCOUNTING FOR 
+# BEFORE RELEASE, MAKE SURE THAT UNDILUTED CAPE IS BEING COMPUTED ON THE BACKEND TO AVOID METPY WEIRDNESS
 
 import metpy as mpy
 import metpy.calc as mpcalc
@@ -14,7 +13,7 @@ import math
 import numpy as np
 import sys
 
-from ecape.calc import calc_ecape, calc_el_height, calc_psi
+from _ecape_calc import calc_ecape
 from metpy.units import check_units, units
 from pint import UnitRegistry
 
@@ -42,7 +41,7 @@ def updraft_radius(cape: float, ecape: float, vsr: float, storm_column_height: f
 
     updraft_radius = nondim_r * storm_column_height
 
-    return updraft_radius/2
+    return updraft_radius
 
 # @param updraftRadius              Units: Meters
 # @return entrainment_rate:         Units: m^-1
@@ -71,9 +70,10 @@ def calc_ecape_parcel(
         pseudoadiabatic_switch: bool = True,
         cape_type: str = "most_unstable",
         storm_motion_type: str = "right_moving", 
-        inflow_bottom: pint.Quantity = 0 * units.kilometer, 
-        inflow_top: pint.Quantity = 1 * units.kilometer, 
+        inflow_layer_bottom: pint.Quantity = 0 * units.kilometer, 
+        inflow_layer_top: pint.Quantity = 1 * units.kilometer, 
         cape: pint.Quantity = None,
+        lfc: pint.Quantity = None,
         el: pint.Quantity = None) -> Tuple[pint.Quantity, pint.Quantity, pint.Quantity, pint.Quantity, pint.Quantity]:
     
     if cape_type not in ['most_unstable', 'mixed_layer', 'surface_based']:
@@ -124,16 +124,28 @@ def calc_ecape_parcel(
         parcel_temperature = temperature[0]
         parcel_dewpoint = dewpoint[0]
         
-    if cape == None and el == None:
-        parcel_profile = mpcalc.parcel_profile(pressure, parcel_temperature, parcel_dewpoint)
-        cape, _ = mpcalc.cape_cin(pressure, temperature, dewpoint, parcel_profile)
-        el = calc_el_height(pressure, height, temperature, dewpoint, parcel_func[cape_type])[1]
-    elif cape != None and el == None:
-        parcel_profile = mpcalc.parcel_profile(pressure, parcel_temperature, parcel_dewpoint)
-        el = calc_el_height(pressure, height, temperature, dewpoint, parcel_func[cape_type])[1]
-    elif cape == None and el != None:
-        parcel_profile = mpcalc.parcel_profile(pressure, parcel_temperature, parcel_dewpoint)
-        cape, _ = mpcalc.cape_cin(pressure, temperature, dewpoint, parcel_profile) * units("J/kg")
+    # print("in house cape/el calc:", cape, el, entrainment_switch)
+    if (cape == None or lfc == None or el == None) and entrainment_switch == True:
+        # print("-- using in-house cape --")
+        undiluted_parcel_profile = calc_ecape_parcel(pressure, height, temperature, dewpoint, u_wind, v_wind, align_to_input_pressure_values, False, pseudoadiabatic_switch, cape_type, storm_motion_type, inflow_layer_bottom, inflow_layer_top)
+
+        undiluted_parcel_profile_z = undiluted_parcel_profile[1]
+        undiluted_parcel_profile_T = undiluted_parcel_profile[2]
+        undiluted_parcel_profile_qv = undiluted_parcel_profile[3]
+        undiluted_parcel_profile_qt = undiluted_parcel_profile[4]
+
+        undil_cape, _, undil_lfc, undil_el = _custom_cape_cin_lfc_el(undiluted_parcel_profile_z, undiluted_parcel_profile_T, undiluted_parcel_profile_qv, undiluted_parcel_profile_qt, height, temperature, specific_humidity)
+        # cape, _ = mpcalc.cape_cin(pressure, temperature, dewpoint, parcel_profile)
+        # el = calc_el_height(pressure, height, temperature, dewpoint, parcel_func[cape_type])[1]
+
+        if cape == None:
+            cape = undil_cape
+
+        if lfc == None:
+            lfc = undil_lfc
+
+        if el == None:
+            el = undil_el
 
     # print("el: ", el)
     # print("parcel_height: ", parcel_height)
@@ -145,31 +157,35 @@ def calc_ecape_parcel(
     # print(u_wind)
     # print(v_wind)
     # print(cape_type)
-    # print("cape", cape)
+    # print("post in-house cape:", cape)
         
-    if cape <= 0:
-        if align_to_input_pressure_values:
-            pressure_raw = [None] * len(pressure)
-            height_raw = [None] * len(pressure)
-            temperature_raw = [None] * len(pressure)
-            qv_raw = [None] * len(pressure)
-            qt_raw = [None] * len(pressure)
+    if entrainment_switch == True:
+        if cape <= 0:
+            if align_to_input_pressure_values:
+                pressure_raw = [None] * len(pressure)
+                height_raw = [None] * len(pressure)
+                temperature_raw = [None] * len(pressure)
+                qv_raw = [None] * len(pressure)
+                qt_raw = [None] * len(pressure)
 
-            return (pressure_raw,  height_raw, temperature_raw, qv_raw, qt_raw)
-        else:
-            pressure_raw = [None]
-            height_raw = [None]
-            temperature_raw = [None]
-            qv_raw = [None]
-            qt_raw = [None]
-            
-            return (pressure_raw,  height_raw, temperature_raw, qv_raw, qt_raw)
+                return (pressure_raw,  height_raw, temperature_raw, qv_raw, qt_raw)
+            else:
+                pressure_raw = [None]
+                height_raw = [None]
+                temperature_raw = [None]
+                qv_raw = [None]
+                qt_raw = [None]
+                
+                return (pressure_raw,  height_raw, temperature_raw, qv_raw, qt_raw)
 
     entr_rate = None
 
     if entrainment_switch:
-        ecape = calc_ecape(height, pressure, temperature, specific_humidity, u_wind, v_wind, cape_type, cape)
-        vsr = calc_sr_wind(pressure, u_wind, v_wind, height, storm_motion_type, inflow_bottom, inflow_top)
+        # print("amelia calc ecape")
+        # print("lfc:", lfc)
+        # print("el:", el)
+        ecape = calc_ecape(height, pressure, temperature, specific_humidity, u_wind, v_wind, cape_type, cape, inflow_bottom=inflow_layer_bottom, inflow_top=inflow_layer_top, storm_motion=storm_motion_type, lfc=lfc, el=el)
+        vsr = calc_sr_wind(pressure, u_wind, v_wind, height, storm_motion_type, inflow_layer_bottom, inflow_layer_top)
         storm_column_height = el - parcel_height
 
         cape = cape.to("joule / kilogram")
@@ -181,20 +197,20 @@ def calc_ecape_parcel(
         # for i in range(len(height)):
         #     print(height[i], pressure[i], temperature[i].to('degK'), specific_humidity[i], u_wind[i], v_wind[i])
 
-        print("amelia cape: ", cape)
-        print("amelia psi: ", calc_psi(storm_column_height))
-        print("amelia ecape: ", ecape)
-        print("amelia vsr: ", vsr)
-        print("amelia storm_column_height: ", storm_column_height)
+        # print("amelia cape: ", cape)
+        # print("amelia eil0: ", inflow_layer_bottom)
+        # print("amelia eil1: ", inflow_layer_top)
+        # print("amelia psi: ", calc_psi(storm_column_height))
+        # print("amelia ecape: ", ecape)
+        # print("amelia vsr: ", vsr)
+        # print("amelia storm_column_height: ", storm_column_height)
 
         r = updraft_radius(cape.magnitude, ecape.magnitude, vsr.magnitude, storm_column_height.magnitude)
         epsilon = entrainment_rate(r)
 
-        print("ur inputs:", cape.magnitude, ecape.magnitude, vsr.magnitude, storm_column_height.magnitude)
-
-        print("going into peters profile")
-        print("ur:", r)
-        print("eps:", epsilon)
+        # print("amelia ur inputs:", cape.magnitude, ecape.magnitude, vsr.magnitude, storm_column_height.magnitude)
+        # print("amelia ur:", r)
+        # print("amelia eps:", epsilon)
         
         entr_rate = epsilon / units.meter
     else:
@@ -206,7 +222,7 @@ def calc_ecape_parcel(
     parcel_temperature = parcel_temperature.to("degK")
     parcel_dewpoint = parcel_dewpoint.to("degK")
 
-    parcel_qv = specific_humidity_from_dewpoint(parcel_pressure, parcel_dewpoint)
+    parcel_qv = mpcalc.specific_humidity_from_dewpoint(parcel_pressure, parcel_dewpoint)
     parcel_qt = parcel_qv
 
     pressure_raw = []
@@ -220,8 +236,6 @@ def calc_ecape_parcel(
     temperature_raw.append(parcel_temperature)
     qv_raw.append(parcel_qv)
     qt_raw.append(parcel_qt)
-
-    parcel_moist_static_energy = mpcalc.moist_static_energy(parcel_height, parcel_temperature, parcel_qv)
 
     # print("parcel z/q/q0:", parcel_height, parcel_qv, specific_humidity[0])
     # print("specific humidity: ", specific_humidity)
@@ -250,7 +264,7 @@ def calc_ecape_parcel(
             dT_dz = unsaturated_adiabatic_lapse_rate(parcel_temperature, parcel_qv, env_temperature, env_qv, entr_rate)
             dqv_dz = -entr_rate * (parcel_qv - env_qv)
 
-            q_sat = specific_humidity_from_dewpoint(parcel_pressure, parcel_temperature)
+            # q_sat = specific_humidity_from_dewpoint(parcel_pressure, parcel_temperature)
             
             # print("amelia dT/dz:", dT_dz.m, parcel_temperature.m, parcel_qv.m, env_temperature.m, env_qv.m, parcel_pressure.m, entr_rate.m, "dqv_dz", dqv_dz.m, (-entr_rate * (parcel_qv - env_qv)).m, parcel_qv.m, env_qv.m)
             # print("amelia dT/dz:", dT_dz.m, parcel_temperature.m, parcel_qv.m, env_temperature.m, env_qv.m, parcel_pressure.m, parcel_height.m, entr_rate.m, "q_sat", q_sat)
@@ -373,15 +387,22 @@ def calc_ecape_parcel(
 
             # print("searching for interp_t at height", input_height)
 
-            new_t = rev_linear_interp(pressure_raw, temperature_nondim, input_pressure)
-            new_qv = rev_linear_interp(pressure_raw, qv_nondim, input_pressure)
-            new_qt = rev_linear_interp(pressure_raw, qt_nondim, input_pressure)
+            if input_height > height_raw[0]:
+                new_t = rev_linear_interp(pressure_raw, temperature_nondim, input_pressure)
+                new_qv = rev_linear_interp(pressure_raw, qv_nondim, input_pressure)
+                new_qt = rev_linear_interp(pressure_raw, qt_nondim, input_pressure)
 
-            pressure_nondim_aligned.append(input_pressure.magnitude)
-            height_nondim_aligned.append(input_height.magnitude)
-            temperature_nondim_aligned.append(new_t)
-            qv_nondim_aligned.append(new_qv)
-            qt_nondim_aligned.append(new_qt)
+                pressure_nondim_aligned.append(input_pressure.magnitude)
+                height_nondim_aligned.append(input_height.magnitude)
+                temperature_nondim_aligned.append(new_t)
+                qv_nondim_aligned.append(new_qv)
+                qt_nondim_aligned.append(new_qt)
+            else:
+                pressure_nondim_aligned.append(input_pressure.magnitude)
+                height_nondim_aligned.append(input_height.magnitude)
+                temperature_nondim_aligned.append(temperature[i].to("degK").magnitude)
+                qv_nondim_aligned.append(specific_humidity[i].magnitude)
+                qt_nondim_aligned.append(specific_humidity[i].magnitude)
 
         pressure_nondim = pressure_nondim_aligned
         height_nondim = height_nondim_aligned
@@ -536,37 +557,65 @@ def rev_linear_interp(input_arr: PintList, output_arr: PintList, input: pint.Qua
     return None # case should not be reached
 
 c_p = 1005 * units.joule / units.kilogram / units.kelvin
-# iterative solver for the temperature and dewpoint of the parcel from MSE, assuming 100% saturation.
-# messy and stupid, but necessary
-def temperature_from_mse(mse: pint.Quantity, pressure: pint.Quantity, height: pint.Quantity, specific_humidity: pint.Quantity) -> pint.Quantity:
-    #print(mse)
-    mse = mse.to("J/kg")
-    #print(mse)
 
-    moist_nonstatic_energy = mse - height * g # made up parameter lol
+# allows for true adiabatic CAPE calculation and also bypasses metpy weirdness even for pseudoadiabatic
+# only intended for undiluted
+def _custom_cape_cin_lfc_el(
+        parcel_height: pint.Quantity,
+        parcel_temperature: pint.Quantity,
+        parcel_qv: pint.Quantity,
+        parcel_qt: pint.Quantity,
+        env_height: pint.Quantity,
+        env_temperature: pint.Quantity,
+        env_qv: pint.Quantity) -> pint.Quantity:
+    parcel_density_temperature = density_temperature(parcel_temperature, parcel_qv, parcel_qt)
+    env_density_temperature = density_temperature(env_temperature, env_qv, env_qv)
 
-    #print(height, g, height * g)
-    #print("moist_nonstatic_energy:", moist_nonstatic_energy)
+    integrated_positive_buoyancy = 0 * units("J/kg")
+    integrated_negative_buoyancy = 0 * units("J/kg")
+    lfc = None
+    el = None
 
-    c_pm = specific_heat_capacity_of_moist_air(specific_humidity)
+    env_mse = mpcalc.moist_static_energy(env_height, env_temperature, env_qv)
 
-    guess_t = moist_nonstatic_energy / c_pm
-    guess_q = mpcalc.specific_humidity_from_dewpoint(pressure, guess_t)
-    guess_mse = mpcalc.moist_static_energy(height, guess_t, guess_q).to("J/kg")
-
-    #print("mse:", mse, "guess_mse:", guess_mse, "guess_t", guess_t)
-
-    GUESS_CHANGE_COEF = 0.2
-    while abs(mse.magnitude - guess_mse.magnitude) > 1:
-        guess_diff = mse - guess_mse
-
-        #print("mse:", mse, "guess_mse:", guess_mse, "guess_t", guess_t)
-
-        guess_t -= -guess_diff / c_p * GUESS_CHANGE_COEF
-        guess_q = mpcalc.specific_humidity_from_dewpoint(pressure, guess_t)
-        guess_mse = mpcalc.moist_static_energy(height, guess_t, guess_q).to("J/kg")
+    # for i in range(len(env_mse)):
+    #     print(i, env_height[i], env_temperature[i], env_mse[i])
     
-    return guess_t
+    height_min_mse_idx = np.where(env_mse==np.min(env_mse))[0][0] #FIND THE INDEX OF THE HEIGHT OF MINIMUM MSE
+    height_min_mse = env_height[height_min_mse_idx]
+
+    for i in range(len(parcel_height) - 1, 0, -1):
+        z0 = parcel_height[i]
+        dz = parcel_height[i] - parcel_height[i - 1]
+
+        T_rho_0 = linear_interp(env_height, env_density_temperature, z0)
+
+        T_rho = parcel_density_temperature[i]
+
+        buoyancy = g * (T_rho - T_rho_0) / T_rho
+
+        # print(z0, buoyancy)
+
+        ### MARK FIRST POSITIVE BUOYANCY HEIGHT AS EL
+        if buoyancy > 0 * g.units and el == None:
+            el = z0
+
+        ### IF LFC IS NOT YET REACHED, INTEGRATE ALL POSITIVE BUOYANCY
+        if buoyancy > 0 * g.units and lfc == None:
+            integrated_positive_buoyancy += buoyancy * dz
+        
+        # print("z0 < height_min_mse:", z0, height_min_mse)
+        ### MARK FIRST NEGATIVE BUOYANCY HEIGHT BELOW MIN_MSE AS LFC
+        if z0 < height_min_mse and buoyancy < 0 * g.units:
+            integrated_negative_buoyancy += buoyancy * dz
+
+            if lfc == None:
+                lfc = z0
+
+    if lfc == None:
+        lfc = env_height[0]
+
+    return integrated_positive_buoyancy, integrated_negative_buoyancy, lfc, el
 
 def specific_humidity_from_dewpoint(pressure, dewpoint):
 	vapor_pressure_ = vapor_pressure(dewpoint)
@@ -587,9 +636,6 @@ def specific_humidity(pressure: pint.Quantity, vapor_pressure: pint.Quantity) ->
 
     water_vapor_density = absolute_humidity(vapor_pressure_nondim, 280); # kg m^-3
     air_density = dry_air_density(pressure_nondim - vapor_pressure_nondim, 280); # kg m^-3
-
-    # print("d_wv:", water_vapor_density)
-    # print("d_da:", air_density)
 
     return water_vapor_density / (water_vapor_density + air_density)
 
@@ -631,12 +677,6 @@ def dewpoint_from_vapor_pressure(vapor_pressure):
 
     vapor_pres_nondim = vapor_pressure
 
-    # print(1 / t0)
-    # print((461.5 / latent_heat_of_vaporization))
-    # print(vapor_pressure)
-    # print(e0)
-    # print(math.log(vapor_pres_nondim / e0))
-
     dewpoint_reciprocal = 1 / t0 - (461.5 / latent_heat_of_vaporization) * math.log(vapor_pres_nondim / e0)
 
     return (1 / dewpoint_reciprocal) * units('K')
@@ -656,6 +696,12 @@ phi = R_d/R_v
 
 @check_units('[temperature]', '[dimensionless]', '[dimensionless]')
 def density_temperature(temperature, qv, qt) -> pint.Quantity:
+    if isinstance(temperature, list):
+        if temperature[0] == None:
+            len_t = len(temperature)
+
+            return [None] * len_t
+
     t_rho = temperature * (1 - qt + qv/phi)
 
     return t_rho
@@ -671,10 +717,6 @@ def unsaturated_adiabatic_lapse_rate(temperature_parcel: pint.Quantity, qv_parce
     buoyancy = g * (density_temperature_parcel - density_temperature_env)/density_temperature_env
 
     c_pmv = (1 - qv_parcel) * c_pd + qv_parcel * c_pv
-
-    # print("amelia cpmv:", c_pmv)
-    # print("amelia B:", buoyancy)
-    # print("amelia eps:", temperature_entrainment)
 
     term_1 = -g/c_pd
     term_2 = 1 + (buoyancy/g)
@@ -701,7 +743,7 @@ def ice_fraction_deriv(temperature, warmest_mixed_phase_temp, coldest_mixed_phas
         return 0 / units('K')
     else:
         return (1/(coldest_mixed_phase_temp - warmest_mixed_phase_temp))
-    
+
 vapor_pres_ref = 611.2 * units("Pa")
 # borrowed and adapted from ECAPE_FUNCTIONS
 def r_sat(temperature, pressure, ice_flag: int, warmest_mixed_phase_temp: pint.Quantity = 273.15 * units("K"), coldest_mixed_phase_temp: pint.Quantity = 253.15 * units("K")):
@@ -746,11 +788,6 @@ def saturated_adiabatic_lapse_rate(temperature_parcel: pint.Quantity, qt_parcel:
     if qt_entrainment == None:
         qt_entrainment = -entrainment_rate * (qt_parcel - qv_env) - prate * (qt_parcel - qv_parcel)
 
-    # print("dqv_dz:", qv_entrainment)
-
-    # print("amelia eps_T:", temperature_entrainment)
-    # print("amelia eps_qv:", qv_entrainment)
-    # print("amelia eps_qt:", qt_entrainment)
     q_condensate = qt_parcel - qv_parcel
     ql_parcel = q_condensate * (1 - omega)
     qi_parcel = q_condensate * omega
@@ -762,9 +799,6 @@ def saturated_adiabatic_lapse_rate(temperature_parcel: pint.Quantity, qt_parcel:
 
     buoyancy = g * (density_temperature_parcel - density_temperature_env)/density_temperature_env
 
-    # print("density_temperature_parcel:", density_temperature_parcel)
-    # print("density_temperature_env:", density_temperature_env)
-
     L_v = L_v_trip + (temperature_parcel - T_trip)*(c_pv - c_pl)
     L_i = L_i_trip + (temperature_parcel - T_trip)*(c_pl - c_pi)
 
@@ -772,10 +806,6 @@ def saturated_adiabatic_lapse_rate(temperature_parcel: pint.Quantity, qt_parcel:
 
     Q_vsl = q_vsl/(phi - phi*qt_parcel + qv_parcel)
     Q_vsi = q_vsi/(phi - phi*qt_parcel + qv_parcel)
-    # print("q_vsl:", q_vsl)
-    # print("q_vsi:", q_vsi)
-    # print("Q_vsl:", Q_vsl)
-    # print("Q_vsi:", Q_vsi)
 
     Q_M = (1 - omega) * (q_vsl)/(1 - Q_vsl) + omega * (q_vsi)/(1 - Q_vsi)
     L_M = (1 - omega) * L_v * (q_vsl)/(1 - Q_vsl) + omega * (L_v + L_i) * (q_vsi)/(1 - Q_vsi)
