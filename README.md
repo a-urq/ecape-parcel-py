@@ -2,7 +2,7 @@
 A simple Python package that computes ECAPE values and parcel paths. Code has been verified by checking it against the ECAPE_FUNCTIONS script written by Dr. John Peters.
 
 # Installation
-Installation through PyPI is recommended. Be advised that the currently released version uses an incorrect formula, and work on this problem is ongoing. Copy-paste the following line into your terminal.
+Installation through PyPI is recommended. Copy-paste the following line into your terminal:
 
 `pip install ecape-parcel`
 
