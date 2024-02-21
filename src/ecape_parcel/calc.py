@@ -1,10 +1,8 @@
 #
 # AUTHOR: Amelia Urquhart (https://github.com/a-urq)
-# VERSION: 1.1-pre
-# DATE: February 18, 2024
+# VERSION: 1.1.0
+# DATE: February 21, 2024
 #
-
-# BEFORE RELEASE, MAKE SURE THAT UNDILUTED CAPE IS BEING COMPUTED ON THE BACKEND TO AVOID METPY WEIRDNESS
 
 import metpy as mpy
 import metpy.calc as mpcalc
