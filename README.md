@@ -26,9 +26,7 @@ hour  = '00'
 latlon = [35.18, -97.44]
 method = 'rap' 
 
-raw_data = spy.get_model_data(method, latlon, year, month, day, hour)
-
-clean_data = spy.parse_data(raw_data)
+clean_data = spy.get_model_data(method, latlon, year, month, day, hour)
 
 p = clean_data['p']
 T = clean_data['T']
