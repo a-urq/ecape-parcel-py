@@ -39,7 +39,7 @@ def updraft_radius(cape: float, ecape: float, vsr: float, storm_column_height: f
 
     updraft_radius = nondim_r * storm_column_height
 
-    return updraft_radius
+    return updraft_radius / 2
 
 # @param updraftRadius              Units: Meters
 # @return entrainment_rate:         Units: m^-1
