@@ -1,7 +1,7 @@
 #
 # AUTHOR: Amelia Urquhart (https://github.com/a-urq)
-# VERSION: 1.1.1
-# DATE: February 21, 2024
+# VERSION: 1.1.2
+# DATE: February 27, 2024
 #
 
 import metpy as mpy
@@ -74,10 +74,14 @@ def calc_ecape_parcel(
         lfc: pint.Quantity = None,
         el: pint.Quantity = None,
         storm_motion_u: pint.Quantity = None,
-        storm_motion_v: pint.Quantity = None) -> Tuple[pint.Quantity, pint.Quantity, pint.Quantity, pint.Quantity, pint.Quantity]:
+        storm_motion_v: pint.Quantity = None,
+        origin_pressure: pint.Quantity = None,
+        origin_height: pint.Quantity = None,
+        origin_temperature: pint.Quantity = None,
+        origin_dewpoint: pint.Quantity = None) -> Tuple[pint.Quantity, pint.Quantity, pint.Quantity, pint.Quantity, pint.Quantity]:
     
-    if cape_type not in ['most_unstable', 'mixed_layer', 'surface_based']:
-        sys.exit("Invalid 'cape_type' kwarg. Valid cape_types include ['most_unstable', 'mixed_layer', 'surface_based']")
+    if cape_type not in ['most_unstable', 'mixed_layer', 'surface_based', 'user_defined']:
+        sys.exit("Invalid 'cape_type' kwarg. Valid cape_types include ['most_unstable', 'mixed_layer', 'surface_based', 'user_defined']")
     
     if storm_motion_type not in ['right_moving', 'left_moving', 'mean_wind', 'user_defined']:
         sys.exit("Invalid 'storm_motion_type' kwarg. Valid storm_motion_types include ['right_moving', 'left_moving', 'mean_wind', 'user_defined']")
@@ -110,8 +114,29 @@ def calc_ecape_parcel(
         "surface_based": None,
         "mixed_layer": mpcalc.mixed_parcel,
     }
+    
+    # have a "user_defined" switch option
+    if "user_defined" == cape_type:
+        if origin_pressure != None:
+            parcel_pressure = origin_pressure
+        else:
+            parcel_pressure = pressure[0]
+        
+        if origin_height != None:
+            parcel_height = origin_height
+        else:
+            parcel_height = height[0]
 
-    if "most_unstable" == cape_type:
+        if origin_temperature != None:
+            parcel_temperature = origin_temperature
+        else:
+            parcel_temperature = temperature[0]
+
+        if origin_dewpoint != None:
+            parcel_dewpoint = origin_dewpoint
+        else:
+            parcel_dewpoint = dewpoint[0]
+    elif "most_unstable" == cape_type:
         parcel_pressure, parcel_temperature, parcel_dewpoint, mu_idx = mpcalc.most_unstable_parcel(pressure, temperature, dewpoint)
         parcel_height = height[mu_idx]
     elif "mixed_layer" == cape_type:
@@ -123,11 +148,16 @@ def calc_ecape_parcel(
         parcel_height = height[0]
         parcel_temperature = temperature[0]
         parcel_dewpoint = dewpoint[0]
+    else:
+        parcel_pressure = pressure[0]
+        parcel_height = height[0]
+        parcel_temperature = temperature[0]
+        parcel_dewpoint = dewpoint[0]
         
     # print("in house cape/el calc:", cape, el, entrainment_switch)
     if (cape == None or lfc == None or el == None) and entrainment_switch == True:
         # print("-- using in-house cape --")
-        undiluted_parcel_profile = calc_ecape_parcel(pressure, height, temperature, dewpoint, u_wind, v_wind, align_to_input_pressure_values, False, pseudoadiabatic_switch, cape_type, storm_motion_type, inflow_layer_bottom, inflow_layer_top)
+        undiluted_parcel_profile = calc_ecape_parcel(pressure, height, temperature, dewpoint, u_wind, v_wind, align_to_input_pressure_values, False, pseudoadiabatic_switch, cape_type, storm_motion_type, inflow_layer_bottom, inflow_layer_top, origin_pressure=origin_pressure, origin_height=origin_height, origin_temperature=origin_temperature, origin_dewpoint=origin_dewpoint)
 
         undiluted_parcel_profile_z = undiluted_parcel_profile[1]
         undiluted_parcel_profile_T = undiluted_parcel_profile[2]
@@ -338,9 +368,6 @@ def calc_ecape_parcel(
 
         # print(parcel_pressure, parcel_height, parcel_temperature, parcel_qv, parcel_qt)
 
-    # for i in range(len(qv_raw)):
-    #     print("amelia q profile:", pressure_raw[i], qv_raw[i], qt_raw[i])
-
     pressure_units = pressure_raw[-1].units
     height_units = height_raw[-1].units
     temperature_units = temperature_raw[-1].units
@@ -359,14 +386,18 @@ def calc_ecape_parcel(
     # print("temperature_raw", temperature_raw[0:30])
     # print("dewpoint_raw", dewpoint_raw[0:30])
 
-    # for i in range(len(height_raw)):
-    #     print(pressure_raw[i], height_raw[i], temperature_raw[i], dewpoint_raw[i])
+    pressure_nondim = [None] * len(pressure_raw)
+    height_nondim = [None] * len(height_raw)
+    temperature_nondim = [None] * len(temperature_raw)
+    qv_nondim = [None] * len(qv_raw)
+    qt_nondim = [None] * len(qt_raw)
 
-    pressure_nondim = [pressure.magnitude for pressure in pressure_raw]
-    height_nondim = [height.magnitude for height in height_raw]
-    temperature_nondim = [temperature.magnitude for temperature in temperature_raw]
-    qv_nondim = [dewpoint.magnitude for dewpoint in qv_raw]
-    qt_nondim = [dewpoint.magnitude for dewpoint in qt_raw]
+    for i in range(len(height_raw)):
+        pressure_nondim[i] = pressure_raw[i].magnitude
+        height_nondim[i] = height_raw[i].magnitude
+        temperature_nondim[i] = temperature_raw[i].magnitude
+        qv_nondim[i] = qv_raw[i].magnitude
+        qt_nondim[i] = qt_raw[i].magnitude
 
     # makes it work ok with sounderpy
     if align_to_input_pressure_values:
@@ -387,7 +418,7 @@ def calc_ecape_parcel(
 
             # print("searching for interp_t at height", input_height)
 
-            if input_height > height_raw[0]:
+            if input_height >= height_raw[0]:
                 new_t = rev_linear_interp(pressure_raw, temperature_nondim, input_pressure)
                 new_qv = rev_linear_interp(pressure_raw, qv_nondim, input_pressure)
                 new_qt = rev_linear_interp(pressure_raw, qt_nondim, input_pressure)
