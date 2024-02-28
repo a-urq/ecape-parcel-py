@@ -107,7 +107,13 @@ calc_ecape_parcel(p, z, T, Td, u, v, True, entrainment_switch=True, pseudoadiaba
 calc_ecape_parcel(p, z, T, Td, u, v, True, entrainment_switch=True, pseudoadiabatic_switch=False, storm_motion_type="mean_wind", inflow_layer_bottom: pint.Quantity = 0 * units.kilometer, inflow_layer_top: pint.Quantity = 3 * units.kilometer)
 
 # Uses user-computed CAPE, LFC, and EL values
-calc_ecape_parcel(p, z, T, Td, u, v, True, entrainment_switch=True, cape=3500 * units("J/kg"), lfc=500 * units("m"), cape=12500 * units("m"))
+calc_ecape_parcel(p, z, T, Td, u, v, True, entrainment_switch=True, cape=3500 * units("J/kg"), lfc=500 * units("m"), el=12500 * units("m"))
+
+# Uses custom T/Td values for the parcel origin
+calc_ecape_parcel(p, z, T, Td, u, v, True, entrainment_switch=True, origin_temperature=305 * units('degK'), origin_dewpoint=300 * units('degK'))
+
+# Uses custom T/Td/p/z values for the parcel origin
+calc_ecape_parcel(p, z, T, Td, u, v, True, entrainment_switch=True, origin_temperature=305 * units('degK'), origin_dewpoint=300 * units('degK'), origin_pressure=70000 * units('Pa'), origin_height=3000 * units('m'))
 ```
 
 # Verification
