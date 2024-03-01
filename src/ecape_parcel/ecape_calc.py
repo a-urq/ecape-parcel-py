@@ -288,6 +288,128 @@ def calc_ncape(integral_arg: PintList, height_msl: PintList, lfc_idx: int, el_id
     return ncape
 
 
+# Borrowed directly from ECAPE_FUNCTIONS
+#==============================================================================
+ #descriminator function between liquid and ice (i.e., omega defined in the
+ #beginning of section 2e in Peters et al. 2022)
+def omega(T,T1,T2):
+    return ((T - T1)/(T2-T1))*np.heaviside((T - T1)/(T2-T1),1)*np.heaviside((1 - (T - T1)/(T2-T1)),1) + np.heaviside(-(1 - (T - T1)/(T2-T1)),1);
+def domega(T,T1,T2):
+    return (np.heaviside(T1-T,1) - np.heaviside(T2-T,1))/(T2-T1)
+#==============================================================================
+
+# Borrowed directly from ECAPE_FUNCTIONS
+#==============================================================================
+#FUNCTION THAT CALCULATES THE SATURATION MIXING RATIO
+def compute_rsat(T,p,iceflag,T1,T2):
+    
+    #THIS FUNCTION COMPUTES THE SATURATION MIXING RATIO, USING THE INTEGRATED
+    #CLAUSIUS CLAPEYRON EQUATION (eq. 7-12 in Peters et al. 2022).
+    #https://doi-org.ezaccess.libraries.psu.edu/10.1175/JAS-D-21-0118.1 
+
+    #input arguments
+    #T temperature (in K)
+    #p pressure (in Pa)
+    #iceflag (give mixing ratio with respect to liquid (0), combo liquid and
+    #ice (2), or ice (3)
+    #T1 warmest mixed-phase temperature
+    #T2 coldest mixed-phase temperature
+    
+    #NOTE: most of my scripts and functions that use this function need
+    #saturation mass fraction qs, not saturation mixing ratio rs.  To get
+    #qs from rs, use the formula qs = (1 - qt)*rs, where qt is the total
+    #water mass fraction
+
+    #CONSTANTS
+    Rd=287.04#%dry gas constant
+    Rv=461.5 #water vapor gas constant
+    epsilon=Rd/Rv
+    cp=1005 #specific heat of dry air at constant pressure
+    g=9.81 #gravitational acceleration
+    xlv=2501000 #reference latent heat of vaporization at the triple point temperature
+    xls=2834000 #reference latent heat of sublimation at the triple point temperature
+    cpv=1870 #specific heat of water vapor at constant pressure
+    cpl=4190 #specific heat of liquid water
+    cpi=2106 #specific heat of ice
+    ttrip=273.15; #triple point temperature
+    eref=611.2 #reference pressure at the triple point temperature
+
+    omeg = omega(T,T1,T2)
+    if iceflag==0:
+        term1=(cpv-cpl)/Rv
+        term2=(xlv-ttrip*(cpv-cpl))/Rv
+        esl=np.exp((T-ttrip)*term2/(T*ttrip))*eref*(T/ttrip)**(term1)
+        qsat=epsilon*esl/(p-esl)
+    elif iceflag==1: #give linear combination of mixing ratio with respect to liquid and ice (eq. 20 in Peters et al. 2022)
+        term1=(cpv-cpl)/Rv
+        term2=(xlv-ttrip*(cpv-cpl))/Rv
+        esl_l=np.exp((T-ttrip)*term2/(T*ttrip))*eref*(T/ttrip)**(term1)
+        qsat_l=epsilon*esl_l/(p-esl_l);
+        term1=(cpv-cpi)/Rv
+        term2=( xls-ttrip*(cpv-cpi))/Rv
+        esl_i=np.exp((T-ttrip)*term2/(T*ttrip))*eref*(T/ttrip)**(term1);
+        qsat_i=epsilon*esl_i/(p-esl_i)
+        qsat=(1-omeg)*qsat_l + (omeg)*qsat_i
+    elif iceflag==2: #only give mixing ratio with respect to ice
+        term1=(cpv-cpi)/Rv
+        term2=( xls-ttrip*(cpv-cpi))/Rv
+        esl=np.exp((T-ttrip)*term2/(T*ttrip))*eref*(T/ttrip)**(term1)
+        esl = min( esl , p*0.5 )
+        qsat=epsilon*esl/(p-esl);
+    return qsat
+#==============================================================================
+
+# Borrowed directly from ECAPE_FUNCTIONS 
+#==============================================================================
+#FUNCTION THAT COMPUTES NCAPE
+def compute_NCAPE(T0,p0,q0,z0,T1,T2,LFC,EL):
+
+    Rd=287.04 # %DRY GAS CONSTANT
+    Rv=461.5 # %GAS CONSTANT FOR WATEEER VAPRR
+    epsilon=Rd/Rv # %RATO OF THE TWO
+    cp=1005 #HEAT CAPACITY OF DRY AIR AT CONSTANT PRESSUREE
+    gamma=Rd/cp #POTENTIAL TEMPERATURE EXPONENT
+    g=9.81 #GRAVITATIONAL CONSTANT
+    Gamma_d=g/cp #DRY ADIABATIC LAPSE RATE
+    xlv=2501000 #LATENT HEAT OF VAPORIZATION AT TRIPLE POINT TEMPERATURE
+    xls=2834000 #LATENT HEAT OF SUBLIMATION AT TRIPLE POINT TEMPERATURE
+    cpv=1870 #HEAT CAPACITY OF WATER VAPOR AT CONSTANT PRESSURE
+    cpl=4190 #HEAT CAPACITY OF LIQUID WATER
+    cpi=2106 #HEAT CAPACITY OF ICE
+    pref=611.65 #REFERENCE VAPOR PRESSURE OF WATER VAPOR AT TRIPLE POINT TEMPERATURE
+    ttrip=273.15 #TRIPLE POINT TEMPERATURE
+    
+    #COMPUTE THE MOIST STATIC ENERGY
+    MSE0 = cp*T0 + xlv*q0 + g*z0
+    
+    #COMPUTE THE SATURATED MOIST STATIC ENERGY
+    rsat = compute_rsat(T0,p0,0,T1,T2)
+    qsat = (1 - rsat)*rsat
+    MSE0_star = cp*T0 + xlv*qsat + g*z0
+    
+    #COMPUTE MSE0_BAR
+    MSE0bar=np.zeros(MSE0.shape)
+    #for iz in np.arange(0,MSE0bar.shape[0],1):
+     #   MSE0bar[iz]=np.mean(MSE0[1:iz])
+        
+    MSE0bar[0]=MSE0[0]
+    for iz in np.arange(1,MSE0bar.shape[0],1):
+        MSE0bar[iz] = 0.5*np.sum( (MSE0[0:iz] + MSE0[1:iz+1])*(z0[1:iz+1]-z0[0:iz]) )/(z0[iz]-z0[0])
+    
+    int_arg = - ( g/(cp*T0) )*( MSE0bar - MSE0_star)
+    ddiff = abs(z0-LFC)
+    mn = np.min(ddiff)
+    ind_LFC = np.where(ddiff==mn)[0][0]
+    ddiff = abs(z0-EL)
+    mn = np.min(ddiff)
+    ind_EL = np.where(ddiff==mn)[0][0]
+    #ind_LFC=max(ind_LFC);
+    #ind_EL=max(ind_EL);
+    
+    NCAPE = np.maximum(np.nansum( (0.5*int_arg[ind_LFC:ind_EL-1] + 0.5*int_arg[ind_LFC+1:ind_EL] )*(z0[ind_LFC+1:ind_EL] - z0[ind_LFC:ind_EL-1] ) ),0)
+    return NCAPE,MSE0_star,MSE0bar
+#==============================================================================
+
 @check_units("[speed]", "[dimensionless]", "[length]**2/[time]**2", "[energy]/[mass]")
 def calc_ecape_a(sr_wind: PintList, psi: pint.Quantity, ncape: pint.Quantity, cape: pint.Quantity) -> pint.Quantity:
     """
@@ -341,7 +463,7 @@ def calc_psi(el_z: pint.Quantity) -> pint.Quantity:
     pr = (1.0 / 3.0) * units("dimensionless")  # prandtl number
     ksq = 0.18 * units("dimensionless")  # von karman constant
 
-    psi = (ksq * alpha**2 * np.pi**2 * l_mix) / (pr * sigma**2 * el_z)
+    psi = (ksq * alpha**2 * np.pi**2 * l_mix) / (4 * pr * sigma**2 * el_z)
 
     return psi
 
@@ -414,6 +536,7 @@ def calc_ecape(
         cape = undiluted_cape
 
     lfc_idx = None
+    lfc_z = None
     el_idx = None
     el_z = None
 
@@ -423,7 +546,7 @@ def calc_ecape(
     if lfc == None:
         # print("doing lfc_idx as calc lfc height")
         # calculate the level of free convection (lfc) and equilibrium level (el) indexes
-        lfc_idx, _ = calc_lfc_height(pressure, height_msl, temperature, dew_point_temperature, parcel_func[cape_type])
+        lfc_idx, lfc_z = calc_lfc_height(pressure, height_msl, temperature, dew_point_temperature, parcel_func[cape_type])
         el_idx, el_z = calc_el_height(pressure, height_msl, temperature, dew_point_temperature, parcel_func[cape_type])
     else:
         # print("doing lfc_idx as np where")
@@ -431,11 +554,15 @@ def calc_ecape(
         el_idx = np.where(height_msl > el)[0][0]
     #     print(i, temperature[i], parcel_profile[i].to('degC'))
         el_z = el
+        lfc_z = lfc
 
     # calculate the buoyancy dilution potential (ncape)
-    moist_static_energy_bar, moist_static_energy_star = calc_mse(pressure, height_msl, temperature, specific_humidity)
-    integral_arg = calc_integral_arg(moist_static_energy_bar, moist_static_energy_star, temperature)
-    ncape = calc_ncape(integral_arg, height_msl, lfc_idx, el_idx)
+    # moist_static_energy_bar, moist_static_energy_star = calc_mse(pressure, height_msl, temperature, specific_humidity)
+    # integral_arg = calc_integral_arg(moist_static_energy_bar, moist_static_energy_star, temperature)
+    # ncape = calc_ncape(integral_arg, height_msl, lfc_idx, el_idx)
+        
+    ncape = compute_NCAPE(temperature.to("degK").magnitude, pressure.to("Pa").magnitude, specific_humidity.to("kg/kg").magnitude, height_msl.to("m").magnitude, 273.15, 253.15, lfc_z.to("m").magnitude, el_z.to("m").magnitude)
+    ncape = ncape[0] * units("J/kg")
 
     # calculate the storm relative (sr) wind
     sr_wind = calc_sr_wind(pressure, u_wind, v_wind, height_msl, infl_bottom=inflow_bottom, infl_top=inflow_top, storm_motion_type=storm_motion, sm_u=u_sm, sm_v=v_sm)
@@ -446,6 +573,111 @@ def calc_ecape(
 
     return ecape_a
 
+
+@check_units("[length]", "[pressure]", "[temperature]", "[mass]/[mass]", "[speed]", "[speed]")
+def calc_ecape_ncape(
+    height_msl: PintList,
+    pressure: PintList,
+    temperature: PintList,
+    specific_humidity: PintList,
+    u_wind: PintList,
+    v_wind: PintList,
+    cape_type: str = "most_unstable",
+    undiluted_cape: pint.Quantity = None,
+    inflow_bottom: pint.Quantity = 0 * units("m"), 
+    inflow_top: pint.Quantity = 1000 * units("m"), 
+    storm_motion: str = "right_moving",
+    lfc: pint.Quantity = None, 
+    el: pint.Quantity = None, 
+    u_sm: pint.Quantity = None, 
+    v_sm: pint.Quantity = None, 
+) -> pint.Quantity:
+    """
+    Calculate the entraining CAPE (ECAPE) of a parcel
+
+    Parameters:
+    ------------
+        height_msl: np.ndarray[pint.Quantity]
+            Atmospheric heights at the levels given by 'pressure' (MSL)
+        pressure: np.ndarray[pint.Quantity]
+            Total atmospheric pressure
+        temperature: np.ndarray[pint.Quantity]
+            Air temperature
+        specific humidity: np.ndarray[pint.Quantity]
+            Specific humidity
+        u_wind: np.ndarray[pint.Quantity]
+            X component of the wind
+        v_wind np.ndarray[pint.Quantity]
+            Y component of the wind
+        cape_type: str
+            Variation of CAPE desired. 'most_unstable' (default), 'surface_based', or 'mixed_layer'
+        undiluted_cape: pint.Quantity
+            User-provided undiluted CAPE value
+
+    Returns:
+    ----------
+        ecape : 'pint.Quantity'
+            Entraining CAPE
+    """
+
+    cape_func = {
+        "most_unstable": mpcalc.most_unstable_cape_cin,
+        "surface_based": mpcalc.surface_based_cape_cin,
+        "mixed_layer": mpcalc.mixed_layer_cape_cin,
+    }
+
+    parcel_func = {
+        "most_unstable": mpcalc.most_unstable_parcel,
+        "surface_based": None,
+        "mixed_layer": mpcalc.mixed_parcel,
+    }
+
+    # calculate cape
+    dew_point_temperature = mpcalc.dewpoint_from_specific_humidity(pressure, temperature, specific_humidity)
+
+    # whether the user has not / has overidden the cape calculations
+    if not undiluted_cape:
+        cape, _ = cape_func[cape_type](pressure, temperature, dew_point_temperature)
+    else:
+        cape = undiluted_cape
+
+    lfc_idx = None
+    lfc_z = None
+    el_idx = None
+    el_z = None
+
+    # print("cape_type:", cape_type)
+    # print("parcel_func:", parcel_func[cape_type])
+
+    if lfc == None:
+        # print("doing lfc_idx as calc lfc height")
+        # calculate the level of free convection (lfc) and equilibrium level (el) indexes
+        lfc_idx, lfc_z = calc_lfc_height(pressure, height_msl, temperature, dew_point_temperature, parcel_func[cape_type])
+        el_idx, el_z = calc_el_height(pressure, height_msl, temperature, dew_point_temperature, parcel_func[cape_type])
+    else:
+        # print("doing lfc_idx as np where")
+        lfc_idx = np.where(height_msl > lfc)[0][0]
+        el_idx = np.where(height_msl > el)[0][0]
+    #     print(i, temperature[i], parcel_profile[i].to('degC'))
+        el_z = el
+        lfc_z = lfc
+
+    # calculate the buoyancy dilution potential (ncape)
+    # moist_static_energy_bar, moist_static_energy_star = calc_mse(pressure, height_msl, temperature, specific_humidity)
+    # integral_arg = calc_integral_arg(moist_static_energy_bar, moist_static_energy_star, temperature)
+    # ncape = calc_ncape(integral_arg, height_msl, lfc_idx, el_idx)
+        
+    ncape = compute_NCAPE(temperature.to("degK").magnitude, pressure.to("Pa").magnitude, specific_humidity.to("kg/kg").magnitude, height_msl.to("m").magnitude, 273.15, 253.15, lfc_z.to("m").magnitude, el_z.to("m").magnitude)
+    ncape = ncape[0] * units("J/kg")
+
+    # calculate the storm relative (sr) wind
+    sr_wind = calc_sr_wind(pressure, u_wind, v_wind, height_msl, infl_bottom=inflow_bottom, infl_top=inflow_top, storm_motion_type=storm_motion, sm_u=u_sm, sm_v=v_sm)
+
+    # calculate the entraining cape (ecape)
+    psi = calc_psi(el_z)
+    ecape_a = calc_ecape_a(sr_wind, psi, ncape, cape)
+
+    return ecape_a, ncape
 
 if __name__ == "__main__":
     pass

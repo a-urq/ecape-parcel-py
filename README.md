@@ -114,6 +114,26 @@ calc_ecape_parcel(p, z, T, Td, u, v, True, entrainment_switch=True, origin_tempe
 
 # Uses custom T/Td/p/z values for the parcel origin
 calc_ecape_parcel(p, z, T, Td, u, v, True, entrainment_switch=True, origin_temperature=305 * units('degK'), origin_dewpoint=300 * units('degK'), origin_pressure=70000 * units('Pa'), origin_height=3000 * units('m'))
+
+# Uses a custom mixed layer depth of 50 hPa
+calc_ecape_parcel(p, z, T, Td, u, v, True, entrainment_switch=True, mixed_layer_depth_height = 50 * units('hPa'))
+
+# Uses a custom mixed layer depth of 500 m
+calc_ecape_parcel(p, z, T, Td, u, v, True, entrainment_switch=True, mixed_layer_depth_height = 500 * units('m'))
+
+# Computes the 3CAPE of the non-entraining true adiabatic parcel using the package's onboard CAPE computation
+parcel = calc_ecape_parcel(p, z, T, Td, u, v, True, entrainment_switch=False, pseudoadiabatic_switch=False)
+from ecape_parcel.calc import custom_cape_cin_lfc_el
+q = ... # compute specific humidity from dewpoint, I recommend using MetPy for this
+threeCape, _, _, _ = custom_cape_cin_lfc_el(parcel[1], parcel[2], parcel[3], parcel[4], z, T, q, integration_bound_upper = 3000 * units('m'))
+
+# Computes the HGZ-CAPE of the entraining true adiabatic parcel
+parcel = calc_ecape_parcel(p, z, T, Td, u, v, True, entrainment_switch=True, pseudoadiabatic_switch=False)
+
+hgz_bottom = ... # make sure this is a pint.Quantity of units [length]
+hgz_top = ... # and this too
+
+hgzCape = custom_cape_cin_lfc_el(parcel[1], parcel[2], parcel[3], parcel[4], z, T, q, integration_bound_lower = hgz_bottom, integration_bound_upper=hgz_top)
 ```
 
 # Verification

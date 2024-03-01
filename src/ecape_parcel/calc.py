@@ -1,7 +1,7 @@
 #
 # AUTHOR: Amelia Urquhart (https://github.com/a-urq)
-# VERSION: 1.1.2
-# DATE: February 27, 2024
+# VERSION: 1.2.0
+# DATE: March 1, 2024
 #
 
 import metpy as mpy
@@ -11,7 +11,7 @@ import math
 import numpy as np
 import sys
 
-from ecape_parcel.ecape_calc import calc_ecape, calc_sr_wind
+from ecape_parcel.ecape_calc import calc_ecape_ncape, calc_sr_wind
 from metpy.units import check_units, units
 from pint import UnitRegistry
 
@@ -26,31 +26,25 @@ k2 = 0.18
 L_mix = 120
 Pr = 1/3
 
-# @param cape                   Units: J kg^-1
-# @param ecape                  Units: J kg^-1
-# @param vsr                    Units: m s^-1
-# @param storm_column_height    Units: Meters
-# @return updraft_radius:       Units: Meters
-def updraft_radius(cape: float, ecape: float, vsr: float, storm_column_height: float) -> float:
-    nondim_e = ecape / cape
-    nondim_v = vsr / math.sqrt(2 * ecape)
-
-    nondim_r = math.sqrt(((4 * sigma * sigma) / (alpha * alpha * math.pi * math.pi)) * ((nondim_v * nondim_v)/(nondim_e)))
-
-    updraft_radius = nondim_r * storm_column_height
-
-    return updraft_radius / 2
-
 # @param updraftRadius              Units: Meters
 # @return entrainment_rate:         Units: m^-1
-def entrainment_rate(updraft_radius: float) -> float:
-    entrainment_rate = (2 * k2 * L_mix) / (Pr * updraft_radius * updraft_radius)
+def entrainment_rate(cape: float, ecape: float, ncape: float, vsr: float, storm_column_height: float) -> float:
+    E_A_tilde = ecape/cape
+    N_tilde = ncape/cape
+    vsr_tilde = vsr/np.sqrt(2*cape)
+
+    E_tilde = E_A_tilde - vsr_tilde**2
+
+    entrainment_rate = (2 * (1 - E_tilde)/(E_tilde + N_tilde))/(storm_column_height)
 
     return entrainment_rate
 
+def updraft_radius(entrainment_rate: float) -> float:
+    updraft_radius = np.sqrt(2 * k2 * L_mix / (Pr * entrainment_rate))
+
+    return updraft_radius
+
 ECAPE_PARCEL_DZ: pint.Quantity = 20 * units.meter
-DRY_ADIABATIC_LAPSE_RATE: pint.Quantity = 9.761 * units.kelvin / units.kilometer
-DEWPOINT_LAPSE_RATE: pint.Quantity = 1.8 * units.kelvin / units.kilometer
 
 # Unlike the Java version, this expects arrays sorted in order of increasing height, decreasing pressure
 # This is to keep in line with MetPy conventions
@@ -67,6 +61,8 @@ def calc_ecape_parcel(
         entrainment_switch: bool = True,
         pseudoadiabatic_switch: bool = True,
         cape_type: str = "most_unstable",
+        mixed_layer_depth_pressure: pint.Quantity = 100 * units("hPa"),
+        mixed_layer_depth_height: pint.Quantity = None,
         storm_motion_type: str = "right_moving", 
         inflow_layer_bottom: pint.Quantity = 0 * units.kilometer, 
         inflow_layer_top: pint.Quantity = 1 * units.kilometer, 
@@ -108,12 +104,6 @@ def calc_ecape_parcel(
     parcel_height = -1024
     parcel_temperature = -1024
     parcel_dewpoint = -1024
-
-    parcel_func = {
-        "most_unstable": mpcalc.most_unstable_parcel,
-        "surface_based": None,
-        "mixed_layer": mpcalc.mixed_parcel,
-    }
     
     # have a "user_defined" switch option
     if "user_defined" == cape_type:
@@ -140,9 +130,36 @@ def calc_ecape_parcel(
         parcel_pressure, parcel_temperature, parcel_dewpoint, mu_idx = mpcalc.most_unstable_parcel(pressure, temperature, dewpoint)
         parcel_height = height[mu_idx]
     elif "mixed_layer" == cape_type:
-        parcel_temperature, parcel_dewpoint = mpcalc.mixed_layer(pressure, temperature, dewpoint)
-        parcel_pressure, _, _ = mpcalc.mixed_parcel(pressure, temperature, dewpoint)
+        env_potential_temperature = mpcalc.potential_temperature(pressure, temperature)
+        env_specific_humidity = mpcalc.specific_humidity_from_dewpoint(pressure, dewpoint)
+
+        env_idxs_to_include_in_average = None
+
+        if mixed_layer_depth_pressure != None:
+            mixed_layer_top_pressure = pressure[0] - mixed_layer_depth_pressure
+            env_idxs_to_include_in_average = np.where(pressure >= mixed_layer_top_pressure)[0]
+        elif mixed_layer_depth_height != None:
+            mixed_layer_top_height = height[0] + mixed_layer_depth_height
+            env_idxs_to_include_in_average = np.where(height <= mixed_layer_top_height)[0]
+            pass
+        else:
+            mixed_layer_depth_pressure = 100 * units("hPa")
+            mixed_layer_top_pressure = pressure[0] - mixed_layer_depth_pressure
+            env_idxs_to_include_in_average = np.where(pressure >= mixed_layer_top_pressure)[0]
+
+        avg_potential_temperature_sum = 0.0
+        avg_specific_humidity_sum = 0.0
+        for i in range(len(env_idxs_to_include_in_average)):
+            avg_potential_temperature_sum += env_potential_temperature[env_idxs_to_include_in_average[i]]
+            avg_specific_humidity_sum += env_specific_humidity[env_idxs_to_include_in_average[i]]
+
+        avg_potential_temperature = avg_potential_temperature_sum / len(env_idxs_to_include_in_average)
+        avg_specific_humidity = avg_specific_humidity_sum / len(env_idxs_to_include_in_average)
+
+        parcel_pressure = pressure[0]
         parcel_height = height[0]
+        parcel_temperature = mpcalc.temperature_from_potential_temperature(parcel_pressure, avg_potential_temperature)
+        parcel_dewpoint = mpcalc.dewpoint_from_specific_humidity(parcel_pressure, parcel_temperature, avg_specific_humidity)
     elif "surface_based" == cape_type:
         parcel_pressure = pressure[0]
         parcel_height = height[0]
@@ -157,14 +174,14 @@ def calc_ecape_parcel(
     # print("in house cape/el calc:", cape, el, entrainment_switch)
     if (cape == None or lfc == None or el == None) and entrainment_switch == True:
         # print("-- using in-house cape --")
-        undiluted_parcel_profile = calc_ecape_parcel(pressure, height, temperature, dewpoint, u_wind, v_wind, align_to_input_pressure_values, False, pseudoadiabatic_switch, cape_type, storm_motion_type, inflow_layer_bottom, inflow_layer_top, origin_pressure=origin_pressure, origin_height=origin_height, origin_temperature=origin_temperature, origin_dewpoint=origin_dewpoint)
+        undiluted_parcel_profile = calc_ecape_parcel(pressure, height, temperature, dewpoint, u_wind, v_wind, align_to_input_pressure_values, False, pseudoadiabatic_switch, cape_type, mixed_layer_depth_pressure, mixed_layer_depth_height, storm_motion_type, inflow_layer_bottom, inflow_layer_top, origin_pressure=origin_pressure, origin_height=origin_height, origin_temperature=origin_temperature, origin_dewpoint=origin_dewpoint)
 
         undiluted_parcel_profile_z = undiluted_parcel_profile[1]
         undiluted_parcel_profile_T = undiluted_parcel_profile[2]
         undiluted_parcel_profile_qv = undiluted_parcel_profile[3]
         undiluted_parcel_profile_qt = undiluted_parcel_profile[4]
 
-        undil_cape, _, undil_lfc, undil_el = _custom_cape_cin_lfc_el(undiluted_parcel_profile_z, undiluted_parcel_profile_T, undiluted_parcel_profile_qv, undiluted_parcel_profile_qt, height, temperature, specific_humidity)
+        undil_cape, _, undil_lfc, undil_el = custom_cape_cin_lfc_el(undiluted_parcel_profile_z, undiluted_parcel_profile_T, undiluted_parcel_profile_qv, undiluted_parcel_profile_qt, height, temperature, specific_humidity)
         # cape, _ = mpcalc.cape_cin(pressure, temperature, dewpoint, parcel_profile)
         # el = calc_el_height(pressure, height, temperature, dewpoint, parcel_func[cape_type])[1]
 
@@ -214,12 +231,13 @@ def calc_ecape_parcel(
         # print("amelia calc ecape")
         # print("lfc:", lfc)
         # print("el:", el)
-        ecape = calc_ecape(height, pressure, temperature, specific_humidity, u_wind, v_wind, cape_type, cape, inflow_bottom=inflow_layer_bottom, inflow_top=inflow_layer_top, storm_motion=storm_motion_type, lfc=lfc, el=el, u_sm=storm_motion_u, v_sm=storm_motion_v)
+        ecape, ncape = calc_ecape_ncape(height, pressure, temperature, specific_humidity, u_wind, v_wind, cape_type, cape, inflow_bottom=inflow_layer_bottom, inflow_top=inflow_layer_top, storm_motion=storm_motion_type, lfc=lfc, el=el, u_sm=storm_motion_u, v_sm=storm_motion_v)
         vsr = calc_sr_wind(pressure, u_wind, v_wind, height, inflow_layer_bottom, inflow_layer_top, storm_motion_type, sm_u=storm_motion_u, sm_v=storm_motion_v)
         storm_column_height = el - parcel_height
 
         cape = cape.to("joule / kilogram")
         ecape = ecape.to("joule / kilogram")
+        ncape = ncape.to("joule / kilogram")
         vsr = vsr.to("meter / second")
         storm_column_height = storm_column_height.to("meter")
 
@@ -235,8 +253,7 @@ def calc_ecape_parcel(
         # print("amelia vsr: ", vsr)
         # print("amelia storm_column_height: ", storm_column_height)
 
-        r = updraft_radius(cape.magnitude, ecape.magnitude, vsr.magnitude, storm_column_height.magnitude)
-        epsilon = entrainment_rate(r)
+        epsilon = entrainment_rate(cape.magnitude, ecape.magnitude, ncape.magnitude, vsr.magnitude, storm_column_height.magnitude)
 
         # print("amelia ur inputs:", cape.magnitude, ecape.magnitude, vsr.magnitude, storm_column_height.magnitude)
         # print("amelia ur:", r)
@@ -548,14 +565,16 @@ c_p = 1005 * units.joule / units.kilogram / units.kelvin
 
 # allows for true adiabatic CAPE calculation and also bypasses metpy weirdness even for pseudoadiabatic
 # only intended for undiluted
-def _custom_cape_cin_lfc_el(
+def custom_cape_cin_lfc_el(
         parcel_height: pint.Quantity,
         parcel_temperature: pint.Quantity,
         parcel_qv: pint.Quantity,
         parcel_qt: pint.Quantity,
         env_height: pint.Quantity,
         env_temperature: pint.Quantity,
-        env_qv: pint.Quantity) -> pint.Quantity:
+        env_qv: pint.Quantity,
+        integration_bound_lower: pint.Quantity = None,
+        integration_bound_upper: pint.Quantity = None) -> pint.Quantity:
     parcel_density_temperature = density_temperature(parcel_temperature, parcel_qv, parcel_qt)
     env_density_temperature = density_temperature(env_temperature, env_qv, env_qv)
 
@@ -575,6 +594,14 @@ def _custom_cape_cin_lfc_el(
     for i in range(len(parcel_height) - 1, 0, -1):
         z0 = parcel_height[i]
         dz = parcel_height[i] - parcel_height[i - 1]
+
+        if integration_bound_lower != None:
+            if z0 < integration_bound_lower:
+                continue 
+
+        if integration_bound_upper != None:
+            if z0 > integration_bound_upper:
+                continue
 
         T_rho_0 = linear_interp(env_height, env_density_temperature, z0)
 
