@@ -116,7 +116,7 @@ calc_ecape_parcel(p, z, T, Td, u, v, True, entrainment_switch=True, origin_tempe
 calc_ecape_parcel(p, z, T, Td, u, v, True, entrainment_switch=True, origin_temperature=305 * units('degK'), origin_dewpoint=300 * units('degK'), origin_pressure=70000 * units('Pa'), origin_height=3000 * units('m'))
 
 # Uses a custom mixed layer depth of 50 hPa
-calc_ecape_parcel(p, z, T, Td, u, v, True, entrainment_switch=True, mixed_layer_depth_height = 50 * units('hPa'))
+calc_ecape_parcel(p, z, T, Td, u, v, True, entrainment_switch=True, mixed_layer_depth_pressure = 50 * units('hPa'))
 
 # Uses a custom mixed layer depth of 500 m
 calc_ecape_parcel(p, z, T, Td, u, v, True, entrainment_switch=True, mixed_layer_depth_height = 500 * units('m'))
