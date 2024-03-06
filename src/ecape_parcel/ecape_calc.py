@@ -6,9 +6,6 @@
 # There are also a few issues related to MetPy weirdness and irreversible adiabatic descent that
 # I've worked out here.
 
-# The calculation for the Psi parameter appeared to have an extra 4.0 coefficient in the denominator
-# that didn't appear in Peters et. al. 2023 Eq. 52, so I've removed it here
-
 # SPDX-FileCopyrightText: 2023-present Robert Capella <bob.capella@gmail.com>
 # SPDX-License-Identifier: MIT
 
