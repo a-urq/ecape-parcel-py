@@ -1,5 +1,13 @@
 # ecape-parcel-py
-A simple Python package that computes ECAPE values and parcel paths. Code has been verified by checking it against the ECAPE_FUNCTIONS script written by Dr. John Peters.
+A simple Python package that computes ECAPE values and parcel paths. 
+
+By default, the package calculates the parcel for entraining irreversible adiabatic (sometimes referred to by the author as "true adiabatic") ascent. Irreversible adiabatic ascent has been noted to be more accurate than pseudoadiabatic parcels ([Peters et. al. 2022](https://journals.ametsoc.org/view/journals/atsc/79/3/JAS-D-21-0118.1.xml)). However, three other parcel paths are available, including non-entraining irreversible adiabatic, entraining pseudoadiabatic, and non-entraining pseudoadiabatic. Non-entraining pseudoadiabatic ascent is the method most often currently used in meteorology, but Dr. John Peters does provide a formula that accounts for more nuances in the thermodynamic processes involved.
+
+Code has been verified by checking it against the ECAPE_FUNCTIONS script written by Dr. Peters.
+
+# Authors and Contributors
+### **AUTHOR: Amelia R H Urquhart** 
+##### CONTRIBUTOR: Daryl Herzmann
 
 # Installation
 Installation through PyPI is recommended. Copy-paste the following line into your terminal:
