@@ -31,6 +31,10 @@ Documentation = "https://github.com/a-urq/ecape-parcel-py#readme"
 Issues = "https://github.com/a-urq/ecape-parcel-py/issues"
 Source = "https://github.com/a-urq/ecape-parcel-py"
 
+# workaround latest hatchling oddities
+[tool.hatch.build.targets.wheel]
+packages = ["src/ecape_parcel"]
+
 [tool.hatch.version]
 path = "src/ecape_parcel/__about__.py"
 
