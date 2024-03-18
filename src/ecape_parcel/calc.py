@@ -607,7 +607,7 @@ def custom_cape_cin_lfc_el(
 
         T_rho = parcel_density_temperature[i]
 
-        buoyancy = g * (T_rho - T_rho_0) / T_rho
+        buoyancy = g * (T_rho - T_rho_0) / T_rho_0
 
         # print(z0, buoyancy)
 

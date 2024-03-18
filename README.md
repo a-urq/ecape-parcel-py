@@ -124,6 +124,9 @@ calc_ecape_parcel(p, z, T, Td, u, v, True, entrainment_switch=True, pseudoadiaba
 # Uses the Mean Wind 0-3 km storm relative inflow
 calc_ecape_parcel(p, z, T, Td, u, v, True, entrainment_switch=True, pseudoadiabatic_switch=False, storm_motion_type="mean_wind", inflow_layer_bottom: pint.Quantity = 0 * units.kilometer, inflow_layer_top: pint.Quantity = 3 * units.kilometer)
 
+# Uses custom storm motion vector
+calc_ecape_parcel(p, z, T, Td, u, v, True, entrainment_switch=True, pseudoadiabatic_switch=False, storm_motion_type="user_defined", storm_motion_u = 20 *  * units("m/s"), storm_motion_v = 15 * units("m/s"))
+
 # Uses user-computed CAPE, LFC, and EL values
 calc_ecape_parcel(p, z, T, Td, u, v, True, entrainment_switch=True, cape=3500 * units("J/kg"), lfc=500 * units("m"), el=12500 * units("m"))
 
