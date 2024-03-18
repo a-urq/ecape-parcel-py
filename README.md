@@ -18,6 +18,16 @@ After that, include the following line in your Python script, and you should be 
 
 `from ecape_parcel.calc import calc_ecape_parcel, density_temperature`
 
+The package can also be installed through Anaconda with these commands.
+
+`conda config --add channels conda-forge` <br>
+`conda config --set channel_priority strict` <br>
+`conda install ecape-parcel`
+ 
+or
+
+`mamba install ecape-parcel`
+  
 # How To Use
 This package has been written with the intention of using the same input data format as MetPy. This example script was used as a test during development, utilizing <a href="https://github.com/kylejgillett/sounderpy">Kyle Gillett's SounderPy</a> to get test data.
 
