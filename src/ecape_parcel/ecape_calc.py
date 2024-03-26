@@ -454,7 +454,7 @@ def calc_psi(el_z: pint.Quantity) -> pint.Quantity:
     """
 
     # additional constants as denoted in section 4 step 1.
-    sigma = 1.6 * units("dimensionless")
+    sigma = 1.1 * units("dimensionless")
     alpha = 0.8 * units("dimensionless")
     l_mix = 120.0 * units("m")
     pr = (1.0 / 3.0) * units("dimensionless")  # prandtl number

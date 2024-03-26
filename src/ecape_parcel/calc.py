@@ -1,7 +1,7 @@
 #
 # AUTHOR: Amelia Urquhart (https://github.com/a-urq)
-# VERSION: 1.2.0
-# DATE: March 1, 2024
+# VERSION: 1.2.2
+# DATE: March 25, 2024
 #
 
 import metpy as mpy
