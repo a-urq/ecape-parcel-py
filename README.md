@@ -6,8 +6,9 @@ By default, the package calculates the parcel for entraining irreversible adiaba
 Code has been verified by checking it against the ECAPE_FUNCTIONS script written by Dr. Peters.
 
 # Authors and Contributors
-### **AUTHOR: Amelia R H Urquhart** 
-##### CONTRIBUTOR: Daryl Herzmann
+### **AUTHOR: Amelia R H Urquhart, University of Oklahoma** 
+##### CONTRIBUTOR: Daryl Herzmann, Iowa State University 
+##### SPECIAL THANKS TO: Dr. John Peters, Pennsylvania State University
 
 # Installation
 Installation through PyPI is recommended. Copy-paste the following line into your terminal:
