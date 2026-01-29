@@ -71,7 +71,7 @@ Note: While you could plot parcel_T on its own, using the density temperature is
 
 ![RAP_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa](https://github.com/a-urq/ecape-parcel-py/assets/114271919/90b381ff-7cfa-47c6-84b6-cce2739f8dbb)
 
-This parcel trace may look a little different than you were expecting. As part of Dr. Peters's work with deriving lapse rate formulas that considered entrainment, he also accounted for the effect of cloud condensate on the density of the parcel, and therefore the buoyancy. When accounting for this, the parcel is said to be undergoing "irreversible adiabatic ascent". I usually call it "true adiabatic ascent" since I usually don't feel like explaining what's so irreversible about it.
+This parcel trace may look a little different than you were expecting. As part of Dr. Peters's work with deriving lapse rate formulas that considered entrainment, he also accounted for the effect of cloud condensate on the density of the parcel, and therefore the buoyancy. When accounting for this, the parcel is said to be undergoing "irreversible adiabatic ascent". I sometimes refer to it as "true adiabatic ascent" for simplicity.
 
  This causes two noticeable effects from what we're used to.
 
@@ -80,7 +80,7 @@ This parcel trace may look a little different than you were expecting. As part o
 
 ![RAP_Wylie-TX_20191021-03_entr-off_pseudo-off](https://github.com/a-urq/ecape-parcel-py/assets/114271919/51bd953e-72e4-4ae4-bbc8-5e32154ee67c)
 
-In cases where you would prefer to use the traditional method of parcel ascent that assumes all precipitate is removed from the parcel immediately, called "pseudoadiabatic ascent", ecape-parcel-py supports that too. The following code shows all four parcel ascent processes available to users.
+ecape-parcel-py also supports pseudoadiabatic ascent, the traditional parcel ascent method where all precipitate is removed from the parcel immediately upon condensation. The following code shows all four parcel ascent processes available to users.
 
 ```python
 # Uses Non-Entraining Pseudoadiabatic Ascent
